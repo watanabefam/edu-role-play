@@ -1067,9 +1067,20 @@ export class UI {
     if (exportBtn) exportBtn.disabled = !this.resultsReady;
   }
 
+  private shouldAutoScroll(area: HTMLElement): boolean {
+    // Only auto-scroll if user is within 60px of the bottom
+    return area.scrollHeight - area.scrollTop - area.clientHeight < 60;
+  }
+
+  private scrollToBottom(area: HTMLElement): void {
+    area.scrollTop = area.scrollHeight;
+  }
+
   private renderMessages(): void {
     const log = this.root.querySelector("[data-log]") as HTMLElement | null;
     if (!log) return;
+    const area = log.parentElement;
+    const autoScroll = area ? this.shouldAutoScroll(area) : true;
     log.innerHTML = this.messages
       .map((m) => {
         if (m.role === "system-note") {
@@ -1090,8 +1101,7 @@ export class UI {
       })
       .join("");
     this.renderTyping();
-    const area = log.parentElement;
-    if (area) area.scrollTop = area.scrollHeight;
+    if (area && autoScroll) this.scrollToBottom(area);
     this.updateTimerDisplay();
   }
 
@@ -1110,7 +1120,7 @@ export class UI {
       `;
       log.appendChild(row);
       const area = log.parentElement;
-      if (area) area.scrollTop = area.scrollHeight;
+      if (area && this.shouldAutoScroll(area)) this.scrollToBottom(area);
     } else if (existing) {
       existing.remove();
     }
