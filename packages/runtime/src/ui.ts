@@ -85,10 +85,10 @@ textarea { font: inherit; color: inherit; }
 .avatar.you { background: oklch(52% 0.20 255); }
 
 /* Chat log */
-.chat-area { flex: 1; min-height: 0; overflow-y: auto; padding: 4px 0; position: relative; display: flex; flex-direction: column; justify-content: flex-end; }
+.chat-area { flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; padding: 4px 0; position: relative; display: flex; flex-direction: column; overscroll-behavior: contain; }
 .chat-inner {
   max-width: 680px; margin: 0 auto; padding: 0 16px 16px; width: 100%;
-  display: flex; flex-direction: column; gap: 14px;
+  display: flex; flex-direction: column; gap: 14px; margin-top: auto;
 }
 .chat-inner.wide { max-width: none; padding: 16px; }
 
