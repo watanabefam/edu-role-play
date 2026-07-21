@@ -2,6 +2,8 @@ import type {
   ChatMessage,
   CompositionData,
   Difficulty,
+  ObjectiveState,
+  ObjectiveStatusMap,
   ResultSnapshot,
   ScoreResult,
 } from "./types";
@@ -230,13 +232,16 @@ textarea { font: inherit; color: inherit; }
   display: flex; gap: 8px; align-items: flex-start;
 }
 .objective-item.done { border-left-color: oklch(52% 0.18 155); background: oklch(98% 0.03 155); }
+.objective-item.partial { border-left-color: oklch(65% 0.18 85); background: oklch(98% 0.04 85); }
 .objective-item .check {
   width: 16px; height: 16px; border-radius: 50%;
   border: 1.5px solid oklch(78% 0.01 255);
   flex-shrink: 0; display: flex; align-items: center; justify-content: center;
   margin-top: 1px;
+  font-size: 9px; font-weight: 700;
 }
 .objective-item.done .check { background: oklch(52% 0.18 155); border-color: oklch(52% 0.18 155); color: white; }
+.objective-item.partial .check { background: oklch(65% 0.18 85); border-color: oklch(65% 0.18 85); color: white; }
 
 /* Chat column */
 .chat-col { flex: 1; display: flex; flex-direction: column; background: oklch(97.5% 0.006 240); min-width: 0; min-height: 0; position: relative; }
@@ -429,7 +434,7 @@ export class UI {
   private ttsEnabled: boolean;
   private messages: MsgRecord[] = [];
   private streamingAssistant = false;
-  private objectivesDone = new Set<string>();
+  private objectivesDone = new Map() as ObjectiveStatusMap;
   private busy = false;
   private ended = false;
   private resultsReady = false;
@@ -589,14 +594,14 @@ export class UI {
     this.addSystemNote(this.tr("errorPrefix", { message }));
   }
 
-  setObjectiveStatus(done: Set<string>): void {
-    this.objectivesDone = new Set(done);
+  setObjectiveStatus(done: ObjectiveStatusMap): void {
+    this.objectivesDone = new Map(done);
     this.renderObjectives();
   }
 
   resetLog(): void {
     this.messages = [];
-    this.objectivesDone.clear();
+    this.objectivesDone = new Map() as ObjectiveStatusMap;
     this.ended = false;
     this.resultsReady = false;
     this.busy = false;
@@ -993,9 +998,21 @@ export class UI {
     }
     host.innerHTML = this.comp.objectives
       .map((o) => {
-        const done = this.objectivesDone.has(o.id);
-        return `<div class="objective-item${done ? " done" : ""}">
-          <span class="check">${done ? ICONS.check : ""}</span>
+        const status = this.objectivesDone.get(o.id);
+        if (!status || status.state === ObjectiveState.NotMet) {
+          return `<div class="objective-item">
+            <span class="check"></span>
+            <span>${escapeHtml(o.text || o.id)}</span>
+          </div>`;
+        }
+        if (status.state === ObjectiveState.Partial) {
+          return `<div class="objective-item partial">
+            <span class="check">${escapeHtml(status.count || "…")}</span>
+            <span>${escapeHtml(o.text || o.id)}</span>
+          </div>`;
+        }
+        return `<div class="objective-item done">
+          <span class="check">${ICONS.check}</span>
           <span>${escapeHtml(o.text || o.id)}</span>
         </div>`;
       })

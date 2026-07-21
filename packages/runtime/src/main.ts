@@ -6,7 +6,7 @@ import { createResultSnapshot, createSessionId } from "./results";
 import { scoreTranscript } from "./scoring";
 import { createScorm12Adapter } from "./scorm";
 import { t } from "./locales";
-import type { ActivityEvent, ChatMessage, Provider, ResultSnapshot, RuntimeConfig } from "./types";
+import type { ActivityEvent, ChatMessage, ObjectiveState, ObjectiveStatusMap, Provider, ResultSnapshot, RuntimeConfig } from "./types";
 import { UI } from "./ui";
 
 function looksLikeNetworkBlock(err: unknown): boolean {
@@ -109,7 +109,7 @@ export async function mount(host?: HTMLElement): Promise<void> {
   baked = applyProxyOverride(baked);
   const provider = createProvider(baked);
   let history: ChatMessage[] = [];
-  let completedObjectives = new Set<string>();
+  let completedObjectives = new Map() as ObjectiveStatusMap;
   let resultSnapshot: ResultSnapshot | null = null;
   let turn = 0;
   let ended = false;
@@ -198,11 +198,20 @@ export async function mount(host?: HTMLElement): Promise<void> {
       ui.setBusy(false);
 
       if (turn > 0 && turn % checkEvery === 0) {
-        const completed = await detectCompletedObjectives(provider, comp, history);
-        completedObjectives = completed;
-        record("objective_check", { completed: Array.from(completed) });
-        ui.setObjectiveStatus(completed);
-        const allMet = comp.objectives.every((o) => completed.has(o.id));
+        const latest = await detectCompletedObjectives(provider, comp, history);
+        // Merge: never decrease state (sliding window safety)
+        for (const [id, status] of latest) {
+          const prev = completedObjectives.get(id);
+          if (!prev || status.state > prev.state) {
+            completedObjectives.set(id, status);
+          }
+        }
+        record("objective_check", { completed: Array.from(completedObjectives.keys()) });
+        ui.setObjectiveStatus(completedObjectives);
+        const allMet = comp.objectives.every((o) => {
+          const s = completedObjectives.get(o.id);
+          return s && s.state === ObjectiveState.Complete;
+        });
         if (allMet) {
           ui.addSystemNote(t(comp.locale, "allObjectivesMet"));
           window.setTimeout(() => {
@@ -286,7 +295,7 @@ export async function mount(host?: HTMLElement): Promise<void> {
     },
     onRestart: () => {
       history = [];
-      completedObjectives = new Set<string>();
+      completedObjectives = new Map() as ObjectiveStatusMap;
       resultSnapshot = null;
       events = [];
       sessionId = createSessionId();
@@ -317,7 +326,7 @@ export async function mount(host?: HTMLElement): Promise<void> {
     ui.addSystemNote(t(comp.locale, "scoringConversation"));
     try {
       record("scoring");
-      const result = await scoreTranscript(provider, comp, history);
+      const result = await scoreTranscript(provider, comp, history, completedObjectives);
       resultSnapshot = createResultSnapshot({
         comp,
         sessionId,

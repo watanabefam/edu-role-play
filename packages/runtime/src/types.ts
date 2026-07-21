@@ -91,6 +91,20 @@ export interface TranscriptEntry {
   content: string;
 }
 
+export enum ObjectiveState {
+  NotMet = 0,
+  Partial = 1,
+  Complete = 2,
+}
+
+export interface ObjectiveStatus {
+  state: ObjectiveState;
+  count?: string;        // e.g. "1/2" for partial progress
+  evidence?: string;     // quoted transcript text supporting the verdict
+}
+
+export type ObjectiveStatusMap = Map<string, ObjectiveStatus>;
+
 export interface ActivityEvent {
   type:
     | "launch"
