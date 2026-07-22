@@ -1,35 +1,58 @@
 import type { ChatMessage, CompositionData, Provider } from "./types";
 import { ObjectiveState } from "./types";
 
+/** Each entry is {id, state} where state is 1 (partial) or 2 (complete). */
+interface DetectedEntry {
+  id: string;
+  state: number;
+}
+
 /**
- * Parse a comma/line-separated list of objective IDs from the LLM reply.
- * Falls back to JSON array parsing for backward compatibility.
+ * Parse lines like "ask-contextual-questions: 2" or just "ask-contextual-questions"
+ * (no colon = state 2 for backward compatibility).
+ * Falls back to JSON array parsing.
  */
-function parseIdList(text: string): string[] {
+function parseEntries(text: string): DetectedEntry[] {
   const cleaned = text.replace(/```(?:json)?\s*/gi, "").replace(/\s*```/g, "").trim();
 
-  // Try JSON array first (handles [{"id":"x","state":2},...] format)
+  // Try JSON array first
   const jsonMatch = cleaned.match(/\[[\s\S]*\]/);
   if (jsonMatch) {
     try {
       const parsed = JSON.parse(jsonMatch[0]);
       if (Array.isArray(parsed)) {
-        // Array of objects with id field
-        const ids = parsed
-          .filter((v: unknown) => v && typeof v === "object" && typeof (v as Record<string, unknown>).id === "string")
-          .map((v: unknown) => (v as Record<string, unknown>).id as string)
-          .filter(Boolean);
-        if (ids.length > 0) return ids;
+        const entries: DetectedEntry[] = [];
+        for (const v of parsed) {
+          if (v && typeof v === "object") {
+            const id = typeof (v as Record<string, unknown>).id === "string" ? (v as Record<string, unknown>).id as string : "";
+            const state = Number((v as Record<string, unknown>).state);
+            if (id && (state === 1 || state === 2)) entries.push({ id, state });
+          }
+        }
+        if (entries.length > 0) return entries;
       }
     } catch { /* fall through */ }
   }
 
-  // Fallback: comma or newline separated list
-  const items = cleaned
-    .split(/[\n,]+/)
-    .map((s) => s.replace(/^[-*\d.\s]+/, "").trim())
-    .filter((s) => s.length > 0);
-  return items;
+  // Fallback: line-separated with optional ": state" suffix
+  const result: DetectedEntry[] = [];
+  for (const line of cleaned.split(/[\n,]+/)) {
+    const trimmed = line.replace(/^[-*\d.\s]+/, "").trim();
+    if (!trimmed) continue;
+    // Check for "id: state" format
+    const colon = trimmed.lastIndexOf(":");
+    if (colon > 0) {
+      const id = trimmed.slice(0, colon).trim();
+      const state = Number(trimmed.slice(colon + 1).trim());
+      if (id && (state === 1 || state === 2)) {
+        result.push({ id, state });
+        continue;
+      }
+    }
+    // No colon or unparseable state — default to 2 (complete)
+    result.push({ id: trimmed, state: 2 });
+  }
+  return result;
 }
 
 export async function detectCompletedObjectives(
@@ -51,15 +74,16 @@ export async function detectCompletedObjectives(
     `the PERSONA's responses just provide context. The learner must actively ` +
     `ask, mention, or demonstrate progress — if a topic only came up because ` +
     `the PERSONA brought it up unprompted, that does NOT count.\n\n` +
-    `Return the IDs of objectives where the LEARNER actively made progress — ` +
-    `one per line, no numbers or bullets.\n` +
+    `For each objective where the LEARNER has made progress, output:\n` +
+    `<id>: <state>\n` +
+    `where state is 1 (partial — learner started but hasn't met the full ` +
+    `threshold yet) or 2 (complete — threshold fully met).\n` +
     `If an objective requires multiple actions (e.g. "ask at least two ` +
-    `questions"), include it even if only partially met.\n\n` +
+    `questions"), use state 1 when only one action is observed.\n\n` +
     `Objectives:\n${objectiveList}\n\n` +
     `Conversation:\n${transcript}\n\n` +
-    `Return ONLY the objective IDs where the LEARNER actively made progress, ` +
-    `one per line. Example:\n` +
-    `ask-contextual-questions\nexplore-conversion-experience`;
+    `Return ONLY the lines, no other text. Example:\n` +
+    `ask-contextual-questions: 2\nexplore-conversion-experience: 1`;
 
   try {
     const reply = await provider.chat(
@@ -69,16 +93,15 @@ export async function detectCompletedObjectives(
       ],
       { temperature: 0 },
     );
-    const ids = parseIdList(reply);
-    if (ids.length === 0) return new Map();
+    const entries = parseEntries(reply);
+    if (entries.length === 0) return new Map();
 
-    // Valid objective IDs from the composition
     const validIds = new Set(comp.objectives.map((o) => o.id));
 
     const result: ObjectiveStatusMap = new Map();
-    for (const id of ids) {
+    for (const { id, state } of entries) {
       if (!validIds.has(id)) continue;
-      result.set(id, { state: ObjectiveState.Complete, evidence: "detected" });
+      result.set(id, { state: state as ObjectiveState, evidence: "detected" });
     }
     return result;
   } catch {

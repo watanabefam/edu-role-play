@@ -234,14 +234,11 @@ textarea { font: inherit; color: inherit; }
 .objective-item.done { border-left-color: oklch(52% 0.18 155); background: oklch(98% 0.03 155); }
 .objective-item.partial { border-left-color: oklch(65% 0.18 85); background: oklch(98% 0.04 85); }
 .objective-item .check {
-  width: 16px; height: 16px; border-radius: 50%;
-  border: 1.5px solid oklch(78% 0.01 255);
-  flex-shrink: 0; display: flex; align-items: center; justify-content: center;
+  width: 18px; height: 18px; flex-shrink: 0; display: flex; align-items: center; justify-content: center;
   margin-top: 1px;
-  font-size: 9px; font-weight: 700;
 }
-.objective-item.done .check { background: oklch(52% 0.18 155); border-color: oklch(52% 0.18 155); color: white; }
-.objective-item.partial .check { background: oklch(65% 0.18 85); border-color: oklch(65% 0.18 85); color: white; }
+.objective-item .check svg { display: block; }
+.objective-item.done .check svg { color: oklch(52% 0.18 155); }
 
 /* Chat column */
 .chat-col { flex: 1; display: flex; flex-direction: column; background: oklch(97.5% 0.006 240); min-width: 0; min-height: 0; position: relative; }
@@ -989,6 +986,28 @@ export class UI {
     this.renderObjectives();
   }
 
+  /** Build an SVG ring indicator with optional center text and progress arc. */
+  private ringIndicator(centerText: string, fraction: number): string {
+    const r = 6.5;
+    const circ = 2 * Math.PI * r;
+    const offset = circ * (1 - fraction);
+    const fill = fraction >= 1 ? "oklch(52% 0.18 155)" : "oklch(65% 0.18 85)";
+    if (fraction >= 1 && !centerText) {
+      // Filled ring with checkmark
+      return `<svg width="18" height="18" viewBox="0 0 18 18" fill="none">
+        <circle cx="9" cy="9" r="${r}" fill="${fill}" stroke="${fill}" stroke-width="2"/>
+        <path d="M5.5 9.5l2.5 2.5 4.5-5" stroke="white" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>`;
+    }
+    return `<svg width="18" height="18" viewBox="0 0 18 18" fill="none">
+      <circle cx="9" cy="9" r="${r}" stroke="oklch(85% 0.01 240)" stroke-width="2"/>
+      <circle cx="9" cy="9" r="${r}" stroke="${fill}" stroke-width="2"
+        stroke-dasharray="${circ}" stroke-dashoffset="${offset}"
+        stroke-linecap="round" transform="rotate(-90 9 9)" style="transition: stroke-dashoffset 0.4s"/>
+      <text x="9" y="10" text-anchor="middle" font-size="7" font-weight="700" fill="${fill}">${escapeHtml(centerText)}</text>
+    </svg>`;
+  }
+
   private renderObjectives(): void {
     const host = this.root.querySelector("[data-objectives]") as HTMLElement | null;
     if (!host) return;
@@ -1001,18 +1020,25 @@ export class UI {
         const status = this.objectivesDone.get(o.id);
         if (!status || status.state === ObjectiveState.NotMet) {
           return `<div class="objective-item">
-            <span class="check"></span>
+            <span class="check">${this.ringIndicator("", 0)}</span>
             <span>${escapeHtml(o.text || o.id)}</span>
           </div>`;
         }
         if (status.state === ObjectiveState.Partial) {
+          const label = status.count || "…";
+          let fraction = 0.25;
+          if (label.includes("/")) {
+            const parts = label.split("/");
+            const n = Number(parts[0]), d = Number(parts[1]);
+            if (n > 0 && d > 0) fraction = Math.min(n / d, 0.99);
+          }
           return `<div class="objective-item partial">
-            <span class="check">${escapeHtml(status.count || "…")}</span>
+            <span class="check">${this.ringIndicator(label, fraction)}</span>
             <span>${escapeHtml(o.text || o.id)}</span>
           </div>`;
         }
         return `<div class="objective-item done">
-          <span class="check">${ICONS.check}</span>
+          <span class="check">${this.ringIndicator("", 1)}</span>
           <span>${escapeHtml(o.text || o.id)}</span>
         </div>`;
       })
