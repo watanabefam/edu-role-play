@@ -178,6 +178,34 @@ export async function mount(host?: HTMLElement): Promise<void> {
   ui = new UI(root, comp, {
     onSend: async (text) => {
       if (ended) return;
+
+      // Debug mode: send message directly to LLM bypassing the character
+      const debugMatch = text.match(/^Debug:\s*(.*)/is);
+      if (debugMatch) {
+        const query = debugMatch[1].trim();
+        if (query) {
+          ui.appendMessage({ role: "user", content: text });
+          ui.setBusy(true);
+          ui.showTyping(true);
+          try {
+            const reply = await provider.chat(
+              [
+                { role: "system", content: "You are a helpful assistant running inside an edu-role-play simulation debug console. Answer the user's query directly and concisely." },
+                { role: "user", content: query },
+              ],
+              { temperature: 0.3 },
+            );
+            ui.showTyping(false);
+            ui.addSystemNote(`🔧 Debug: ${reply}`);
+          } catch (err) {
+            ui.showTyping(false);
+            ui.showError(`Debug error: ${(err as Error).message}`);
+          }
+          ui.setBusy(false);
+        }
+        return;
+      }
+
       history.push({ role: "user", content: text });
       turn += 1;
       record("turn", { turn, role: "user" });
