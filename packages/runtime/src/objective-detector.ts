@@ -61,14 +61,15 @@ export async function detectCompletedObjectives(
   const objectivesWithRef = comp.objectives
     .map((o) => {
       const ref = rubricMap.get(o.id);
-      // Extract partial/zero criteria as negative examples
+      // Use AI-facing detectText when available, otherwise fall back to human text
+      const objText = o.detectText;
       const partialMatch = ref?.match(/[Pp]artial[\s\S]*?\./);
       const zeroMatch = ref?.match(/[Zz]ero[\s\S]*?(?:\.|$)/);
       const negLines: string[] = [];
       if (partialMatch) negLines.push(`  Does NOT count (partial): ${partialMatch[0].replace(/^[Pp]artial/i, "").trim()}`);
       if (zeroMatch) negLines.push(`  Does NOT count (zero): ${zeroMatch[0].replace(/^[Zz]ero/i, "").trim()}`);
       const refLine = ref ? `  Full credit: ${ref}` : "";
-      return [`- ${o.id}: ${o.text}`, refLine, ...negLines].filter(Boolean).join("\n");
+      return [`- ${o.id}: ${objText}`, refLine, ...negLines].filter(Boolean).join("\n");
     })
     .join("\n\n");
 

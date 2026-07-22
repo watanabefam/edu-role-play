@@ -29,7 +29,8 @@ export interface PersonaData {
 
 export interface ObjectiveData {
   id: string;
-  text: string;
+  text: string;         // Human-facing (shown in sidebar)
+  detectText: string;   // AI-facing (used by detector — more specific)
 }
 
 export interface CriterionData {
