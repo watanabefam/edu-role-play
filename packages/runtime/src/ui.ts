@@ -702,7 +702,7 @@ export class UI {
     const backdrop = document.createElement("div");
     backdrop.className = "modal-backdrop";
     backdrop.innerHTML = `
-      <div class="modal-card">
+      <div class="modal-card" data-animate="1">
         <div class="modal-head">
           <div>
             <div class="modal-eyebrow">${escapeHtml(this.tr("sessionComplete"))}</div>
@@ -711,24 +711,22 @@ export class UI {
           <button class="modal-close" title="${escapeAttr(this.tr("close"))}">${ICONS.close}</button>
         </div>
         <div class="score-row">
-          <div class="score-num ${grade}">${out10}<span>/10</span></div>
-          <div class="stars">${Array.from({ length: 10 }, (_, i) =>
-            i < out10 ? ICONS.starFilled : ICONS.starEmpty,
-          ).join("")}</div>
+          <div class="score-num ${grade}"><span class="score-anim">0</span><span>/10</span></div>
+          <div class="stars" data-stars="1">${Array.from({ length: 10 }, () => ICONS.starEmpty).join("")}</div>
           <div style="margin-top:8px;font-size:12.5px;color:oklch(55% 0.01 255)">${escapeHtml(this.tr("totalScore", { score: result.total, max: result.maxTotal }))}</div>
         </div>
-        <div class="summary">${escapeHtml(result.summary)}</div>
+        <div class="summary" style="opacity:0;transition:opacity 0.6s">${escapeHtml(result.summary)}</div>
         ${result.perObjective
           .map(
-            (o) => `
-          <div class="per-obj">
+            (o, i) => `
+          <div class="per-obj" data-idx="${i}" style="opacity:0;transform:translateY(12px);transition:opacity 0.5s ease,transform 0.5s ease">
             <h4>${escapeHtml(this.objectiveLabel(o.id))}</h4>
             <div class="sc">${escapeHtml(this.tr("totalScore", { score: o.score, max: o.maxScore }))}</div>
             <div class="tip">${escapeHtml(o.improvement)}</div>
           </div>`,
           )
           .join("")}
-        <button class="close-btn">${escapeHtml(this.tr("closeAndContinue"))}</button>
+        <button class="close-btn" style="opacity:0;transition:opacity 0.4s">${escapeHtml(this.tr("closeAndContinue"))}</button>
       </div>
     `;
     const close = () => {
@@ -743,6 +741,46 @@ export class UI {
     this.debriefNode = backdrop;
     this.root.appendChild(backdrop);
     this.showRestartAction();
+
+    // Animated score count-up + star fill
+    const numEl = backdrop.querySelector(".score-anim") as HTMLElement;
+    const starsContainer = backdrop.querySelector("[data-stars]") as HTMLElement;
+    const summaryEl = backdrop.querySelector(".summary") as HTMLElement;
+    const objEls = backdrop.querySelectorAll(".per-obj");
+    const closeBtn = backdrop.querySelector(".close-btn") as HTMLElement;
+
+    const duration = 800;
+    const start = performance.now();
+
+    function frame(now: number) {
+      const elapsed = now - start;
+      const progress = Math.min(elapsed / duration, 1);
+      const eased = 1 - Math.pow(1 - progress, 3);
+      const current = Math.round(eased * out10);
+
+      if (numEl) numEl.textContent = String(current);
+      if (starsContainer) {
+        starsContainer.innerHTML = Array.from({ length: 10 }, (_, i) =>
+          i < current ? ICONS.starFilled : ICONS.starEmpty
+        ).join("");
+      }
+
+      if (progress < 1) {
+        requestAnimationFrame(frame);
+      } else {
+        if (summaryEl) summaryEl.style.opacity = "1";
+        objEls.forEach((el, i) => {
+          setTimeout(() => {
+            (el as HTMLElement).style.opacity = "1";
+            (el as HTMLElement).style.transform = "translateY(0)";
+          }, 200 + i * 150);
+        });
+        setTimeout(() => {
+          if (closeBtn) closeBtn.style.opacity = "1";
+        }, 300 + objEls.length * 150);
+      }
+    }
+    requestAnimationFrame(frame);
   }
 
   // ─── Internal helpers ────────────────────────────────────────────
@@ -986,13 +1024,15 @@ export class UI {
     this.renderObjectives();
   }
 
-  /** Build an SVG ring indicator. Supports segmented progress for multi-item objectives. */
-  private ringIndicator(centerText: string, fraction: number, segments?: number): string {
+  /** Build an SVG ring indicator. Supports segmented progress with per-item scores. */
+  private ringIndicator(centerText: string, fraction: number, segmentScores?: number[]): string {
     const cx = 9, cy = 9, r = 6.5, sw = 2;
-    const fill = fraction >= 1 ? "oklch(52% 0.18 155)" : "oklch(65% 0.18 85)";
+    const green = "oklch(52% 0.18 155)";
+    const amber = "oklch(65% 0.18 85)";
     const track = "oklch(85% 0.01 240)";
+    const fill = fraction >= 1 ? green : amber;
 
-    // Filled ring with checkmark when complete and no count to show
+    // Filled ring with checkmark when complete
     if (fraction >= 1 && !centerText) {
       return `<svg width="18" height="18" viewBox="0 0 18 18" fill="none">
         <circle cx="${cx}" cy="${cy}" r="${r}" fill="${fill}" stroke="${fill}" stroke-width="${sw}"/>
@@ -1000,27 +1040,33 @@ export class UI {
       </svg>`;
     }
 
-    // Segmented display when we know N of M
-    if (segments && segments > 1) {
-      const gap = 3; // degrees gap between segments
+    // Segmented display with per-item scores
+    if (segmentScores && segmentScores.length > 1) {
+      const segments = segmentScores.length;
+      const gap = 3;
       const segAngle = (360 - gap * segments) / segments;
-      const filled = Math.round(fraction * segments);
       const half = Math.PI / 180;
 
       function arcPath(startDeg: number, endDeg: number): string {
         const sa = (startDeg - 90) * half, ea = (endDeg - 90) * half;
         const x1 = cx + r * Math.cos(sa), y1 = cy + r * Math.sin(sa);
         const x2 = cx + r * Math.cos(ea), y2 = cy + r * Math.sin(ea);
-        const large = endDeg - startDeg > 180 ? 1 : 0;
-        return `M ${x1} ${y1} A ${r} ${r} 0 ${large} 1 ${x2} ${y2}`;
+        return `M ${x1} ${y1} A ${r} ${r} 0 0 1 ${x2} ${y2}`;
       }
 
       let segs = "";
       for (let i = 0; i < segments; i++) {
         const a = i * (segAngle + gap);
         const b = a + segAngle;
-        const color = i < filled ? fill : track;
-        segs += `<path d="${arcPath(a, b)}" fill="none" stroke="${color}" stroke-width="${sw}" stroke-linecap="round"/>`;
+        const score = Math.max(0, Math.min(100, segmentScores[i]));
+        // Track arc (full)
+        segs += `<path d="${arcPath(a, b)}" fill="none" stroke="${track}" stroke-width="${sw}" stroke-linecap="round"/>`;
+        // Fill arc (proportional to score)
+        if (score > 0) {
+          const mid = a + segAngle * (score / 100);
+          const segFill = score >= 70 ? green : amber;
+          segs += `<path d="${arcPath(a, mid)}" fill="none" stroke="${segFill}" stroke-width="${sw}" stroke-linecap="round" style="transition: d 0.4s"/>`;
+        }
       }
       return `<svg width="18" height="18" viewBox="0 0 18 18" fill="none">${segs}
         <text x="${cx}" y="${cy + 1}" text-anchor="middle" font-size="6" font-weight="700" fill="${fill}">${escapeHtml(centerText)}</text>
@@ -1057,17 +1103,27 @@ export class UI {
         if (status.state === ObjectiveState.Partial) {
           const label = status.count || "…";
           let fraction = 0.25;
-          let segs: number | undefined;
-          if (label.includes("/")) {
+          let segScores: number[] | undefined;
+          // Parse comma-separated scores: "70,85"
+          if (label && /^\d+(\.\d+)?(\s*,\s*\d+(\.\d+)?)+$/.test(label)) {
+            const scores = label.split(",").map(s => Number(s.trim()));
+            if (scores.length > 1 && scores.every(s => Number.isFinite(s))) {
+              const total = scores.reduce((a, b) => a + b, 0);
+              fraction = Math.min(total / (scores.length * 100), 0.99);
+              segScores = scores;
+            }
+          }
+          // Fallback: parse "N/M" format
+          if (!segScores && label.includes("/")) {
             const parts = label.split("/");
             const n = Number(parts[0]), d = Number(parts[1]);
             if (n > 0 && d > 0) {
               fraction = Math.min(n / d, 0.99);
-              segs = d; // use segments only when count has denominator > 1
+              segScores = Array(d).fill(0).map((_, i) => i < n ? 100 : 0);
             }
           }
           return `<div class="objective-item partial">
-            <span class="check">${this.ringIndicator(label, fraction, segs)}</span>
+            <span class="check">${this.ringIndicator(label, fraction, segScores)}</span>
             <span>${escapeHtml(o.text || o.id)}</span>
           </div>`;
         }
