@@ -210,12 +210,54 @@ export async function mount(host?: HTMLElement): Promise<void> {
           return;
         }
 
-        // Debug: anything else — show this help message
+        // Debug: detect "text" — run actual detection on sample text
+        const detectMatch = query.match(/^detect\s+"([^"]+)"|^detect\s+'([^']+)'/i);
+        if (detectMatch) {
+          const testText = detectMatch[1] || detectMatch[2];
+          const wc = testText.split(/\s+/).filter(Boolean).length;
+          const len = testText.length;
+          // Run code filter
+          const isPleasantry = /^(hi|hello|hey|how are you|how do you do|nice to meet|good to see|greetings|thanks|thank you|good|nice|ok|okay|yes|no|sure|please|lol|haha|ahoy|yo|sup|cheers|bye|goodbye|see ya|cya)[\s.!?,]*$/i.test(testText);
+          const isNonsense = len < 30 && /(pirate|matey|ahoy|aye|arrr|water|wine|drink|thirsty|hungry)/i.test(testText);
+          const blocked = wc < 3 || len <= 10 || isPleasantry || isNonsense;
+
+          if (blocked) {
+            const reasons = [];
+            if (wc < 3) reasons.push("less than 3 words");
+            if (len <= 10) reasons.push("too short");
+            if (isPleasantry) reasons.push("pleasantry match");
+            if (isNonsense) reasons.push("nonsense match");
+            ui.addSystemNote(`🔧 Detect "${testText}": BLOCKED by code filter (${reasons.join(", ")}) — LLM not called`);
+          } else {
+            // Call the actual detector with a synthetic history
+            try {
+              const synthHistory: ChatMessage[] = [
+                ...history.slice(-2), // last 2 messages for minimal context
+                { role: "user", content: testText },
+              ];
+              // We need to import detectCompletedObjectives — it's already imported at top
+              const result = await detectCompletedObjectives(provider, comp, synthHistory);
+              if (result.size === 0) {
+                ui.addSystemNote(`🔧 Detect "${testText}": PASSES filter → LLM returned NO objectives detected`);
+              } else {
+                const lines = Array.from(result.entries()).map(([id, s]) =>
+                  `${id} (state ${s.state === 2 ? "GREEN" : "YELLOW"})${s.count ? ` scores=[${s.count}]` : ""}`
+                );
+                ui.addSystemNote(`🔧 Detect "${testText}": PASSES filter → DETECTED:\n${lines.join("\n")}`);
+              }
+            } catch (err) {
+              ui.addSystemNote(`🔧 Detect "${testText}": PASSES filter → LLM call ERROR: ${(err as Error).message}`);
+            }
+          }
+          return;
+        }
+
+        // Debug: anything else — show help
         const help = [
           "Debug commands:",
           "  Debug: state — show current detection state",
-          '  Debug: filter "text" — test if a message would pass the code filter',
-          "  Debug: detect — (not yet implemented) run detection on conversation",
+          '  Debug: filter "text" — test code-level filter only',
+          '  Debug: detect "text" — test filter + actual LLM detection',
         ];
         ui.addSystemNote(`🔧 ${help.join("\n")}`);
         return;
