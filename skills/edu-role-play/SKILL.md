@@ -99,9 +99,25 @@ Wrap the composition in the standard HTML shell below. The `<style>` block and t
     uncover a pain point, quantify its impact, and secure a follow-up meeting.
   </edu-scenario>
 
-  <edu-objective id="discover-pain">Surface at least one current operational pain point Sarah owns.</edu-objective>
-  <edu-objective id="quantify-impact">Get Sarah to share a number (dollars, hours, or headcount).</edu-objective>
-  <edu-objective id="book-followup">Secure a concrete follow-up meeting (date + attendees).</edu-objective>
+  <!--
+    OBJECTIVE `detect` ATTRIBUTE:
+    The visible text is shown to learners in the sidebar.
+    The `detect` attribute is the AI-facing version — be more specific
+    here. Include COUNTS (concrete examples) and DOES NOT COUNT
+    (anti-patterns) to eliminate false positives.
+  -->
+  <edu-objective id="discover-pain"
+    detect="Surface a specific operational pain point. COUNTS: concrete process problems, team bottlenecks, tool limitations. DOES NOT COUNT: greetings, pleasantries, off-topic chat, self-introductions without probing.">
+    Surface at least one current operational pain point Sarah owns.
+  </edu-objective>
+  <edu-objective id="quantify-impact"
+    detect="Get a specific number. COUNTS: dollar amounts, time lost, headcount. DOES NOT COUNT: vague references without numbers, general chatting without quantification.">
+    Get Sarah to share a number (dollars, hours, or headcount).
+  </edu-objective>
+  <edu-objective id="book-followup"
+    detect="Secure a concrete follow-up. COUNTS: specific date, named attendees, clear next step. DOES NOT COUNT: 'let's talk later' without specifics.">
+    Secure a concrete follow-up meeting (date + attendees).
+  </edu-objective>
 
   <edu-rubric>
     <criterion objective="discover-pain" weight="3">Full credit: pain is specific, Sarah-owned, and tied to a process.</criterion>
