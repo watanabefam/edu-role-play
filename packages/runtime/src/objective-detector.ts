@@ -29,12 +29,13 @@ function parseEntries(text: string): DetectedEntry[] {
   for (const line of cleaned.split(/[\n,]+/)) {
     let trimmed = line.replace(/^[-*\d.\s<>]+/, "").trim();
     if (!trimmed) continue;
-    // Extract count suffix " | N/M" if present
+    // Extract per-item scores after "|" if present (e.g. "| 70,85")
     let count: string | undefined;
     const pipeIdx = trimmed.lastIndexOf("|");
     if (pipeIdx > 0) {
       const suffix = trimmed.slice(pipeIdx + 1).trim();
-      if (/^\d+\s*\/\s*\d+$/.test(suffix)) {
+      // Check for comma-separated scores like "70,85" or "N/M" format
+      if (/^\d+(\.\d+)?(\s*,\s*\d+(\.\d+)?)*$/.test(suffix) || /^\d+\s*\/\s*\d+$/.test(suffix)) {
         count = suffix;
         trimmed = trimmed.slice(0, pipeIdx).trim();
       }
@@ -77,9 +78,11 @@ export async function detectCompletedObjectives(
     `STATE=1 — below threshold (low quality or insufficient quantity)\n` +
     `STATE=2 — threshold met AND quality good\n` +
     `Omit objectives with no evidence.\n\n` +
-    `When an objective involves counting (e.g. "ask at least two questions"), ` +
-    `append progress like: id: STATE | N/M\n` +
-    `Example: ask-contextual-questions: 1 | 1/2\n\n` +
+    `When an objective involves counting, append per-item quality scores: ` +
+    `id: STATE | score1,score2,...\n` +
+    `Each score is 0-100 reflecting quality of that specific action.\n` +
+    `Example: ask-contextual-questions: 1 | 70,85\n` +
+    `(means 2 questions: first 70% quality, second 85% quality)\n\n` +
     `Objectives:\n${objectiveList}\n\n` +
     `Conversation:\n${transcript}\n\n` +
     `Example:\n` +
@@ -93,7 +96,18 @@ export async function detectCompletedObjectives(
       ],
       { temperature: 0 },
     );
-    const entries = parseEntries(reply);
+    let entries = parseEntries(reply);
+    // Retry once on parse failure (LLM sometimes deviates from format)
+    if (entries.length === 0) {
+      const retry = await provider.chat(
+        [
+          { role: "system", content: "You are an objective tracker." },
+          { role: "user", content: prompt },
+        ],
+        { temperature: 0.1 },
+      );
+      entries = parseEntries(retry);
+    }
     if (entries.length === 0) return new Map();
 
     const validIds = new Set(comp.objectives.map((o) => o.id));
