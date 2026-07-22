@@ -219,7 +219,10 @@ export async function mount(host?: HTMLElement): Promise<void> {
           const len = testText.length;
           // Run code filter
           const isPleasantry = /^(hi|hello|hey|how are you|how do you do|nice to meet|good to see|greetings|thanks|thank you|good|nice|ok|okay|yes|no|sure|please|lol|haha|ahoy|yo|sup|cheers|bye|goodbye|see ya|cya)[\s.!?,]*$/i.test(testText);
-          const isNonsense = len < 30 && /(pirate|matey|ahoy|aye|arrr|water|wine|drink|thirsty|hungry)/i.test(testText);
+          const nw = /(pirate|matey|ahoy|aye|arrr|yar|landlubber|sea\s+throat|shiver\s+me\s+timbers)/i.test(testText);
+          const fd = /(water|wine|drink|thirsty|hungry|bread|cheese|olives|figs)/i.test(testText);
+          const tw = /(paul|lydia|baptis|convert|belie|christ|jesus|synagogue|roman|jew|gentil|pray|worship|trade|purple|dye|cloth|thyatira|philippi|spirit|church|community|letter|gospel|apostle|god|faith|messiah|river|gangites|preach|teacher|crucif|resurrect)/i.test(testText);
+          const isNonsense = (nw || fd) && !tw;
           const blocked = wc < 3 || len <= 10 || isPleasantry || isNonsense;
 
           if (blocked) {
@@ -302,8 +305,12 @@ export async function mount(host?: HTMLElement): Promise<void> {
       const wordCount = trimmed.split(/\s+/).filter(Boolean).length;
       // Pure pleasantries and social niceties (nothing substantive)
       const isPleasantry = /^(hi|hello|hey|how are you|how do you do|nice to meet|good to see|greetings|thanks|thank you|good|nice|ok|okay|yes|no|sure|please|lol|haha|ahoy|yo|sup|cheers|bye|goodbye|see ya|cya)[\s.!?,]*$/i.test(trimmed);
-      // Short messages that are just jokes or food/drink requests (under 30 chars)
-      const isNonsense = trimmed.length < 30 && /(pirate|matey|ahoy|aye|arrr|water|wine|drink|thirsty|hungry)/i.test(trimmed);
+      // Messages that are jokes or food/drink requests without any real content
+      const hasNonsenseWord = /(pirate|matey|ahoy|aye|arrr|yar|landlubber|sea\s+throat|shiver\s+me\s+timbers)/i.test(trimmed);
+      const hasFoodDrink = /(water|wine|drink|thirsty|hungry|bread|cheese|olives|figs)/i.test(trimmed);
+      const hasTopicWord = /(paul|lydia|baptis|convert|belie|christ|jesus|synagogue|roman|jew|gentil|pray|worship|trade|purple|dye|cloth|thyatira|philippi|spirit|church|community|letter|gospel|apostle|peter|sabbath|river|gangites|god|faith|messiah|savior|teacher|preach|miracle|crucif|resurrect)/i.test(trimmed);
+      // Block if it has nonsense/food words but no real topic words
+      const isNonsense = (hasNonsenseWord || hasFoodDrink) && !hasTopicWord;
       // Need at least 3 words AND enough length to be substantive AND not nonsense
       const isSubstantive = wordCount >= 3 && trimmed.length > 10 && !isPleasantry && !isNonsense;
 
