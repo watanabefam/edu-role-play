@@ -179,40 +179,45 @@ export async function mount(host?: HTMLElement): Promise<void> {
     onSend: async (text) => {
       if (ended) return;
 
-      // Debug mode: send message directly to LLM or show system state
+      // Debug mode: system introspection commands
       const debugMatch = text.match(/^Debug:\s*(.*)/is);
       if (debugMatch) {
-        const query = debugMatch[1].trim().toLowerCase();
-        if (query) {
-          // Special debug commands for system introspection
-          if (query === "state" || query === "detected") {
-            const detected = Array.from(completedObjectives.entries()).map(([id, s]) =>
-              `${id}: state=${s.state === ObjectiveState.Complete ? "GREEN" : s.state === ObjectiveState.Partial ? "YELLOW" : "GREY"}${s.evidence ? ` evidence="${s.evidence}"` : ""}${s.count ? ` count="${s.count}"` : ""}`
-            ).join("\n");
-            ui.addSystemNote(`🔧 Detection state:\n${detected || "(none detected)"}`);
-            return;
-          }
-          ui.appendMessage({ role: "user", content: text });
-          ui.setBusy(true);
-          ui.showTyping(true);
-          const objectivesList = comp.objectives.map(o => `- ${o.id}: ${o.detectText || o.text}`).join("\n");
-          const debugContext = `Debug session. Current objectives (AI-facing):\n${objectivesList}\nAnswer helpfully with whatever detail is relevant.`;
-          try {
-            const reply = await provider.chat(
-              [
-                { role: "system", content: debugContext },
-                { role: "user", content: query },
-              ],
-              { temperature: 0.3 },
-            );
-            ui.showTyping(false);
-            ui.addSystemNote(`🔧 Debug: ${reply}`);
-          } catch (err) {
-            ui.showTyping(false);
-            ui.showError(`Debug error: ${(err as Error).message}`);
-          }
-          ui.setBusy(false);
+        const query = debugMatch[1].trim();
+        if (!query) return;
+
+        ui.appendMessage({ role: "user", content: text });
+
+        // Debug: state — show current detection state
+        if (/^state|^detected/i.test(query)) {
+          const lines = Array.from(completedObjectives.entries()).map(([id, s]) => {
+            const st = s.state === ObjectiveState.Complete ? "GREEN" : s.state === ObjectiveState.Partial ? "YELLOW" : "GREY";
+            return `${id}: ${st}${s.count ? ` (${s.count})` : ""}`;
+          });
+          ui.addSystemNote(`🔧 Detection state:\n${lines.join("\n") || "(none detected)"}\nTurn: ${turn}/${turnCap}`);
+          return;
         }
+
+        // Debug: filter "text" — test what the code filter would decide
+        const filterMatch = query.match(/^filter\s+"([^"]+)"|^filter\s+'([^']+)'/i);
+        if (filterMatch) {
+          const testText = filterMatch[1] || filterMatch[2];
+          const wc = testText.split(/\s+/).filter(Boolean).length;
+          const len = testText.length;
+          const isPleasantry = /^(hi|hello|hey|how are you|how do you do|nice to meet|good to see|greetings|thanks|thank you|good|nice|ok|okay|yes|no|sure|please|lol|haha|ahoy|yo|sup|cheers|bye|goodbye|see ya|cya)[\s.!?,]*$/i.test(testText);
+          const isNonsense = len < 30 && /(pirate|matey|ahoy|aye|arrr|water|wine|drink|thirsty|hungry)/i.test(testText);
+          const substantive = wc >= 3 && len > 10 && !isPleasantry && !isNonsense;
+          ui.addSystemNote(`🔧 Filter check: "${testText}" — ${wc} words, ${len} chars\npleasantry=${isPleasantry} nonsense=${isNonsense} → ${substantive ? "PASSES (detection will run)" : "BLOCKED (detection skipped)"}`);
+          return;
+        }
+
+        // Debug: anything else — show this help message
+        const help = [
+          "Debug commands:",
+          "  Debug: state — show current detection state",
+          '  Debug: filter "text" — test if a message would pass the code filter',
+          "  Debug: detect — (not yet implemented) run detection on conversation",
+        ];
+        ui.addSystemNote(`🔧 ${help.join("\n")}`);
         return;
       }
 
