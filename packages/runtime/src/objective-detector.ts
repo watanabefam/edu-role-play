@@ -62,15 +62,15 @@ export async function detectCompletedObjectives(
       ],
       { temperature: 0 },
     );
-    const entries = parseEntries(reply);
-    if (entries.length === 0) return new Map();
+    const ids = parseIdList(reply);
+    if (ids.length === 0) return new Map();
 
     const validIds = new Set(comp.objectives.map((o) => o.id));
 
     const result: ObjectiveStatusMap = new Map();
-    for (const { id, state } of entries) {
+    for (const id of ids) {
       if (!validIds.has(id)) continue;
-      result.set(id, { state: state as ObjectiveState, evidence: "detected" });
+      result.set(id, { state: ObjectiveState.Complete, evidence: "detected" });
     }
     return result;
   } catch {
