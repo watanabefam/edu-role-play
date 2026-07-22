@@ -45,20 +45,31 @@ export async function detectCompletedObjectives(
     .map((m) => `${m.role === "user" ? "LEARNER" : "PERSONA"}: ${m.content}`)
     .join("\n");
 
-  const objectiveList = comp.objectives
-    .map((o) => `- ${o.id}: ${o.text}`)
+  // Build rubric reference map: objectiveId → full credit description
+  const rubricMap = new Map<string, string>();
+  for (const c of comp.rubric) {
+    rubricMap.set(c.objectiveId, c.text);
+  }
+
+  const objectivesWithRef = comp.objectives
+    .map((o) => {
+      const ref = rubricMap.get(o.id);
+      return ref ? `- ${o.id}: ${o.text}\n  Full credit looks like: ${ref}` : `- ${o.id}: ${o.text}`;
+    })
     .join("\n");
 
   const prompt =
-    `Only the LEARNER's actual questions count. Greetings, pleasantries, ` +
-    `and accepting items do NOT count.\n\n` +
-    `List the objective IDs where the learner has made any real progress — ` +
-    `one per line, no formatting, using the exact ids below.\n` +
-    `Include objectives where progress is partial (started but not complete).\n` +
-    `Omit objectives with no real progress.\n\n` +
-    `Objective ids (use exactly these):\n${comp.objectives.map((o) => o.id).join("\n")}\n\n` +
+    `Only the LEARNER's actual questions or statements count. Greetings, ` +
+    `pleasantries, and accepting offered items do NOT count.\n\n` +
+    `For each objective below, compare what the learner actually said against ` +
+    `the full credit description. List the objective ID if the learner has made ` +
+    `any real progress toward it — even if partial.\n` +
+    `Omit objectives where the learner has not demonstrated any real progress ` +
+    `toward the described standard.\n\n` +
+    `Objectives with full credit reference:\n${objectivesWithRef}\n\n` +
     `Conversation:\n${transcript}\n\n` +
-    `Return ONLY the objective IDs, one per line. Example:\n` +
+    `Return ONLY the objective IDs where progress exists, one per line.\n` +
+    `Example:\n` +
     `ask-contextual-questions\nexplore-conversion-experience`;
 
   try {

@@ -200,9 +200,12 @@ export async function mount(host?: HTMLElement): Promise<void> {
 
       // Skip detection on non-substantive messages (greetings, pleasantries)
       const trimmed = text.trim();
-      // Skip detection on pure greetings and very short messages
-      const isShortGreeting = trimmed.length < 16 && /^(hi|hello|hey|greetings|thanks|thank you|good|nice|ok|yes|no|sure|please)[\s.!?,]*$/i.test(trimmed);
-      const isSubstantive = !isShortGreeting;
+      // Skip detection on greeting-only messages
+      const isGreetingOnly = /^(hi|hello|hey|greetings|thanks|thank you|good|nice|ok|okay|yes|no|sure|please|lol|haha)[\s.!?,]*$/i.test(trimmed);
+      // Skip detection on messages shorter than 20 chars that aren't real questions
+      const tooShort = trimmed.length < 20 && !/\?\s*$/.test(trimmed) && !/^(what|how|why|who|where|when|do|did|can|could|would|will|have|has|is|are|was|were)\s/i.test(trimmed);
+      const startsWithGreeting = /^(hi|hello|hey|greetings|thanks|thank you|good|nice|ok|okay|yes|no|sure|please)[\s.!?,]/i.test(trimmed);
+      const isSubstantive = trimmed.length > 4 && !isGreetingOnly && !(tooShort && startsWithGreeting);
       if (turn > 0 && turn % checkEvery === 0 && isSubstantive) {
         const latest = await detectCompletedObjectives(provider, comp, history);
         // Merge: respect detection quality, never decrease state
