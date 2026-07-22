@@ -62,9 +62,12 @@ export async function detectCompletedObjectives(
   const prompt =
     `Review the conversation below. Only LEARNER messages count as evidence — ` +
     `the PERSONA's responses just provide context.\n\n` +
-    `For each objective, rate the learner's best contribution:\n` +
-    `STATE=1 — touched on it, but vague/barely/tangential/low quality\n` +
-    `STATE=2 — clearly met with specific, on-topic, quality contribution\n` +
+    `For each objective, assess the learner considering BOTH quantity AND quality:\n` +
+    `STATE=1 — some evidence, but below threshold: either quality is low (vague, ` +
+    `tangential) OR quantity is insufficient (e.g. objective requires 2 questions, ` +
+    `learner asked only 1)\n` +
+    `STATE=2 — threshold met AND quality is good: (e.g. asked 2+ specific, ` +
+    `on-topic questions, not just one)\n` +
     `Omit objectives with no evidence at all.\n\n` +
     `Output format: id: STATE (one per line)\n\n` +
     `Objectives:\n${objectiveList}\n\n` +
