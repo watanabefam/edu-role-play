@@ -1155,8 +1155,12 @@ export class UI {
             segScores = Array(d).fill(0).map((_, i) => i < n ? 100 : 0);
           }
         }
+        // Ensure at least a sliver of fill shows for partial state, even with 0 scores
+        fraction = Math.max(fraction, 0.05);
+        if (segScores) {
+          segScores = segScores.map(s => s === 0 ? 5 : s);
+        }
         if (segScores && segScores.length > 1) {
-          // Segmented: recreate SVG (no smooth transition for segments)
           checkEl.innerHTML = this.ringIndicator(fraction, segScores);
         } else {
           this.setRingFill(checkEl, fraction);

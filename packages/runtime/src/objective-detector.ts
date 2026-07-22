@@ -97,7 +97,7 @@ export async function detectCompletedObjectives(
         { role: "system", content: "You are an objective tracker. List which objectives have any evidence." },
         { role: "user", content: prompt },
       ],
-      { temperature: 0, jsonMode: true },
+      { temperature: 0 },
     );
     let entries = parseEntries(reply);
     // Retry once on parse failure with slightly higher temperature
@@ -107,7 +107,7 @@ export async function detectCompletedObjectives(
           { role: "system", content: "You are an objective tracker." },
           { role: "user", content: prompt },
         ],
-        { temperature: 0.1, jsonMode: true },
+        { temperature: 0.1 },
       );
       entries = parseEntries(retry);
     }
