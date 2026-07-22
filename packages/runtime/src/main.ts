@@ -187,10 +187,12 @@ export async function mount(host?: HTMLElement): Promise<void> {
           ui.appendMessage({ role: "user", content: text });
           ui.setBusy(true);
           ui.showTyping(true);
+          const objectivesList = comp.objectives.map(o => `- ${o.id}: ${o.text}`).join("\n");
+          const debugContext = `Debug session. Objectives:\n${objectivesList}\nAnswer concisely in 1-2 sentences. Return raw data when asked.`;
           try {
             const reply = await provider.chat(
               [
-                { role: "system", content: "You are a helpful assistant running inside an edu-role-play simulation debug console. Answer the user's query directly and concisely." },
+                { role: "system", content: debugContext },
                 { role: "user", content: query },
               ],
               { temperature: 0.3 },
