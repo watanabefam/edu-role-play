@@ -4,6 +4,7 @@ import { ObjectiveState } from "./types";
 interface DetectedEntry {
   id: string;
   state: number;
+  count?: string;
 }
 
 /** Parse lines like "id: 2" or "id: 1", or just IDs. Falls back to JSON parsing. */
@@ -23,11 +24,21 @@ function parseEntries(text: string): DetectedEntry[] {
     } catch { /* fall through */ }
   }
 
-  // Fallback: line-separated with optional ":state" suffix
+  // Fallback: line-separated with optional ":state | N/M" suffix
   const result: DetectedEntry[] = [];
   for (const line of cleaned.split(/[\n,]+/)) {
     let trimmed = line.replace(/^[-*\d.\s<>]+/, "").trim();
     if (!trimmed) continue;
+    // Extract count suffix " | N/M" if present
+    let count: string | undefined;
+    const pipeIdx = trimmed.lastIndexOf("|");
+    if (pipeIdx > 0) {
+      const suffix = trimmed.slice(pipeIdx + 1).trim();
+      if (/^\d+\s*\/\s*\d+$/.test(suffix)) {
+        count = suffix;
+        trimmed = trimmed.slice(0, pipeIdx).trim();
+      }
+    }
     // Try "id: state" format
     const colon = trimmed.lastIndexOf(":");
     if (colon > 0) {
@@ -35,7 +46,7 @@ function parseEntries(text: string): DetectedEntry[] {
       id = id.replace(/^[^a-zA-Z0-9_]+|[^a-zA-Z0-9_-]+$/g, "");
       const state = Number(trimmed.slice(colon + 1).trim());
       if (id && (state === 1 || state === 2)) {
-        result.push({ id, state });
+        result.push({ id, state, count });
         continue;
       }
     }
@@ -62,14 +73,13 @@ export async function detectCompletedObjectives(
   const prompt =
     `Review the conversation below. Only LEARNER messages count as evidence — ` +
     `the PERSONA's responses just provide context.\n\n` +
-    `For each objective, assess the learner considering BOTH quantity AND quality:\n` +
-    `STATE=1 — some evidence, but below threshold: either quality is low (vague, ` +
-    `tangential) OR quantity is insufficient (e.g. objective requires 2 questions, ` +
-    `learner asked only 1)\n` +
-    `STATE=2 — threshold met AND quality is good: (e.g. asked 2+ specific, ` +
-    `on-topic questions, not just one)\n` +
-    `Omit objectives with no evidence at all.\n\n` +
-    `Output format: id: STATE (one per line)\n\n` +
+    `For each objective, assess BOTH quantity AND quality:\n` +
+    `STATE=1 — below threshold (low quality or insufficient quantity)\n` +
+    `STATE=2 — threshold met AND quality good\n` +
+    `Omit objectives with no evidence.\n\n` +
+    `When an objective involves counting (e.g. "ask at least two questions"), ` +
+    `append progress like: id: STATE | N/M\n` +
+    `Example: ask-contextual-questions: 1 | 1/2\n\n` +
     `Objectives:\n${objectiveList}\n\n` +
     `Conversation:\n${transcript}\n\n` +
     `Example:\n` +
@@ -89,9 +99,9 @@ export async function detectCompletedObjectives(
     const validIds = new Set(comp.objectives.map((o) => o.id));
 
     const result: ObjectiveStatusMap = new Map();
-    for (const { id, state } of entries) {
+    for (const { id, state, count } of entries) {
       if (!validIds.has(id)) continue;
-      result.set(id, { state: state as ObjectiveState, evidence: "detected" });
+      result.set(id, { state: state as ObjectiveState, evidence: "detected", count });
     }
     return result;
   } catch {

@@ -986,25 +986,55 @@ export class UI {
     this.renderObjectives();
   }
 
-  /** Build an SVG ring indicator with optional center text and progress arc. */
-  private ringIndicator(centerText: string, fraction: number): string {
-    const r = 6.5;
-    const circ = 2 * Math.PI * r;
-    const offset = circ * (1 - fraction);
+  /** Build an SVG ring indicator. Supports segmented progress for multi-item objectives. */
+  private ringIndicator(centerText: string, fraction: number, segments?: number): string {
+    const cx = 9, cy = 9, r = 6.5, sw = 2;
     const fill = fraction >= 1 ? "oklch(52% 0.18 155)" : "oklch(65% 0.18 85)";
+    const track = "oklch(85% 0.01 240)";
+
+    // Filled ring with checkmark when complete and no count to show
     if (fraction >= 1 && !centerText) {
-      // Filled ring with checkmark
       return `<svg width="18" height="18" viewBox="0 0 18 18" fill="none">
-        <circle cx="9" cy="9" r="${r}" fill="${fill}" stroke="${fill}" stroke-width="2"/>
+        <circle cx="${cx}" cy="${cy}" r="${r}" fill="${fill}" stroke="${fill}" stroke-width="${sw}"/>
         <path d="M5.5 9.5l2.5 2.5 4.5-5" stroke="white" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
       </svg>`;
     }
+
+    // Segmented display when we know N of M
+    if (segments && segments > 1) {
+      const gap = 3; // degrees gap between segments
+      const segAngle = (360 - gap * segments) / segments;
+      const filled = Math.round(fraction * segments);
+      const half = Math.PI / 180;
+
+      function arcPath(startDeg: number, endDeg: number): string {
+        const sa = (startDeg - 90) * half, ea = (endDeg - 90) * half;
+        const x1 = cx + r * Math.cos(sa), y1 = cy + r * Math.sin(sa);
+        const x2 = cx + r * Math.cos(ea), y2 = cy + r * Math.sin(ea);
+        const large = endDeg - startDeg > 180 ? 1 : 0;
+        return `M ${x1} ${y1} A ${r} ${r} 0 ${large} 1 ${x2} ${y2}`;
+      }
+
+      let segs = "";
+      for (let i = 0; i < segments; i++) {
+        const a = i * (segAngle + gap);
+        const b = a + segAngle;
+        const color = i < filled ? fill : track;
+        segs += `<path d="${arcPath(a, b)}" fill="none" stroke="${color}" stroke-width="${sw}" stroke-linecap="round"/>`;
+      }
+      return `<svg width="18" height="18" viewBox="0 0 18 18" fill="none">${segs}
+        <text x="${cx}" y="${cy + 1}" text-anchor="middle" font-size="6" font-weight="700" fill="${fill}">${escapeHtml(centerText)}</text>
+      </svg>`;
+    }
+
+    // Single arc (backward compatible)
+    const circ = 2 * Math.PI * r;
     return `<svg width="18" height="18" viewBox="0 0 18 18" fill="none">
-      <circle cx="9" cy="9" r="${r}" stroke="oklch(85% 0.01 240)" stroke-width="2"/>
-      <circle cx="9" cy="9" r="${r}" stroke="${fill}" stroke-width="2"
-        stroke-dasharray="${circ}" stroke-dashoffset="${offset}"
-        stroke-linecap="round" transform="rotate(-90 9 9)" style="transition: stroke-dashoffset 0.4s"/>
-      <text x="9" y="10" text-anchor="middle" font-size="7" font-weight="700" fill="${fill}">${escapeHtml(centerText)}</text>
+      <circle cx="${cx}" cy="${cy}" r="${r}" stroke="${track}" stroke-width="${sw}"/>
+      <circle cx="${cx}" cy="${cy}" r="${r}" stroke="${fill}" stroke-width="${sw}"
+        stroke-dasharray="${circ}" stroke-dashoffset="${circ * (1 - fraction)}"
+        stroke-linecap="round" transform="rotate(-90 ${cx} ${cy})" style="transition: stroke-dashoffset 0.4s"/>
+      <text x="${cx}" y="${cy + 1}" text-anchor="middle" font-size="7" font-weight="700" fill="${fill}">${escapeHtml(centerText)}</text>
     </svg>`;
   }
 
@@ -1027,13 +1057,17 @@ export class UI {
         if (status.state === ObjectiveState.Partial) {
           const label = status.count || "…";
           let fraction = 0.25;
+          let segs: number | undefined;
           if (label.includes("/")) {
             const parts = label.split("/");
             const n = Number(parts[0]), d = Number(parts[1]);
-            if (n > 0 && d > 0) fraction = Math.min(n / d, 0.99);
+            if (n > 0 && d > 0) {
+              fraction = Math.min(n / d, 0.99);
+              segs = d; // use segments only when count has denominator > 1
+            }
           }
           return `<div class="objective-item partial">
-            <span class="check">${this.ringIndicator(label, fraction)}</span>
+            <span class="check">${this.ringIndicator(label, fraction, segs)}</span>
             <span>${escapeHtml(o.text || o.id)}</span>
           </div>`;
         }
