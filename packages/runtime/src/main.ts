@@ -268,11 +268,11 @@ export async function mount(host?: HTMLElement): Promise<void> {
           return;
         }
 
-        // Debug: anything else — try to detect quoted text, or show state
+        // Debug: anything else — show filter analysis, then ask LLM with full context
+        let filterAnalysis = "";
         const quotedMatch = query.match(/"([^"]+)"|'([^']+)'/);
         if (quotedMatch) {
           const quoted = quotedMatch[1] || quotedMatch[2];
-          // Run the same logic as Debug: detect on the quoted text
           const wc = quoted.split(/\s+/).filter(Boolean).length;
           const len = quoted.length;
           const pleasant = /^(hi|hello|hey|how are you|how do you do|nice to meet|good to see|greetings|thanks|thank you|good|nice|ok|okay|yes|no|sure|please|lol|haha|ahoy|yo|sup|cheers|bye|goodbye|see ya|cya)[\s.!?,]*$/i.test(quoted);
@@ -281,26 +281,77 @@ export async function mount(host?: HTMLElement): Promise<void> {
           const tw = /(paul|lydia|baptis|convert|belie|christ|jesus|synagogue|roman|jew|gentil|pray|worship|trade|purple|dye|cloth|thyatira|philippi|spirit|church|community|letter|gospel|apostle|god|faith|messiah|river|gangites|preach|teacher|crucif|resurrect)/i.test(quoted);
           const nonsense = (nw || fd) && !tw;
           const blocked = wc < 3 || len <= 10 || pleasant || nonsense;
-          let reasons: string[] = [];
           if (blocked) {
+            const reasons: string[] = [];
             if (wc < 3) reasons.push(`${wc} words < 3`);
-            if (len <= 10) reasons.push(`too short`);
+            if (len <= 10) reasons.push("too short");
             if (pleasant) reasons.push("pure pleasantry");
-            if (nonsense && !tw) reasons.push("pirate/joke words without topic");
-            if (fd && !tw) reasons.push("food/drink without topic");
-            ui.addSystemNote(`🔧 Answer: "${quoted}" → BLOCKED by code filter (${reasons.join(", ")}). LLM never evaluated it.`);
+            if (nonsense && !tw) reasons.push("pirate/joke without topic word");
+            if (fd && !tw) reasons.push("food/drink without topic word");
+            filterAnalysis = `Code filter: BLOCKED (${reasons.join(", ")}). The message was never sent to the LLM for evaluation.`;
           } else {
-            const topicMatches = tw ? "contains topic word" : "no topic but passes other checks";
-            ui.addSystemNote(`🔧 Answer: "${quoted}" → PASSES filter (${wc} words, ${len} chars, ${topicMatches}). Would be sent to LLM for evaluation.`);
+            filterAnalysis = `Code filter: PASSED (${wc} words, ${len} chars). Message was sent to LLM for evaluation.`;
           }
-        } else {
-          // No quoted text — show state
-          const lines = Array.from(completedObjectives.entries()).map(([id, s]) => {
-            const st = s.state === ObjectiveState.Complete ? "GREEN" : s.state === ObjectiveState.Partial ? "YELLOW" : "GREY";
-            return `${id}: ${st}`;
-          });
-          ui.addSystemNote(`🔧 Current state:\n${lines.join("\n") || "(none detected)"}\nTurn ${turn}/${turnCap}`);
+          ui.addSystemNote(`🔧 Filter: ${filterAnalysis}`);
         }
+
+        // Now send the user's question to the LLM with full debug context
+        ui.appendMessage({ role: "user", content: text });
+        ui.setBusy(true);
+        ui.showTyping(true);
+
+        // Build comprehensive debug context
+        const detectTexts = comp.objectives.map(o =>
+          `- ${o.id} (${completedObjectives.get(o.id)?.state === 2 ? "GREEN" : completedObjectives.get(o.id)?.state === 1 ? "YELLOW" : "GREY"}): ${o.detectText}`
+        ).join("\n");
+        const rubricText = comp.rubric.map(c =>
+          `- ${c.objectiveId} (weight ${c.weight}): ${c.text}`
+        ).join("\n");
+        const recentHistory = history.filter(m => m.role !== "system").slice(-6).map(m =>
+          `${m.role === "user" ? "LEARNER" : "PERSONA"}: ${m.content.slice(0, 200)}`
+        ).join("\n");
+        const convHistory = history.filter(m => m.role === "user").slice(-4).map(m =>
+          `LEARNER: ${m.content.slice(0, 200)}`
+        ).join("\n");
+
+        const debugPrompt = `You are a debug assistant analyzing an edu-role-play detection system. The system uses a code-level filter, then sends learner messages to an LLM detector with AI-facing objective text.
+
+Current detection state:
+${comp.objectives.map(o => `- ${o.id}: ${completedObjectives.get(o.id)?.state === 2 ? "GREEN" : completedObjectives.get(o.id)?.state === 1 ? "YELLOW" : "GREY"}`).join("\n")}
+
+AI-facing objective texts (what the detector LLM sees):
+${detectTexts}
+
+Rubric (used by final scorer):
+${rubricText}
+
+${filterAnalysis ? `Filter analysis for quoted text:\n${filterAnalysis}\n` : ""}
+
+Recent learner messages (only these are sent to the detector):
+${convHistory || "(no learner messages yet)"}
+
+Full recent conversation (for context):
+${recentHistory || "(no history yet)"}
+
+The user's question is: ${query}
+
+Answer specifically — analyze why the detection system made the decision it did, referencing the actual objective texts and filter logic. Be concise but thorough.`;
+
+        try {
+          const reply = await provider.chat(
+            [
+              { role: "system", content: "You are a debug assistant for an edu-role-play objective detection system. Analyze the situation using the provided system state and objective texts. Answer specifically, referencing objective IDs and filter rules. Be concise." },
+              { role: "user", content: debugPrompt },
+            ],
+            { temperature: 0.3 },
+          );
+          ui.showTyping(false);
+          ui.addSystemNote(`🔧 Debug analysis:\n${reply}`);
+        } catch (err) {
+          ui.showTyping(false);
+          ui.showError(`Debug error: ${(err as Error).message}`);
+        }
+        ui.setBusy(false);
         return;
       }
 
