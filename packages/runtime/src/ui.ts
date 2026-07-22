@@ -1095,11 +1095,12 @@ export class UI {
     const target = circ * (1 - fraction);
     const current = parseFloat(arc.getAttribute("stroke-dashoffset") || "0");
 
-    // Use Web Animations API for reliable cross-browser animation
-    arc.animate(
+    // Animate from current to target, then commit final value to attribute
+    const animation = arc.animate(
       [{ strokeDashoffset: String(current) }, { strokeDashoffset: String(target) }],
-      { duration: 500, easing: "ease", fill: "forwards" }
+      { duration: 500, easing: "ease" }
     );
+    animation.onfinish = () => arc.setAttribute("stroke-dashoffset", String(target));
   }
 
   private renderObjectives(): void {
