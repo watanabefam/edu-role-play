@@ -205,9 +205,11 @@ export async function mount(host?: HTMLElement): Promise<void> {
           const wc = testText.split(/\s+/).filter(Boolean).length;
           const len = testText.length;
           const isPleasantry = /^(hi|hello|hey|how are you|how do you do|nice to meet|good to see|greetings|thanks|thank you|good|nice|ok|okay|yes|no|sure|please|lol|haha|ahoy|yo|sup|cheers|bye|goodbye|see ya|cya)[\s.!?,]*$/i.test(testText);
-          const isNonsense = len < 30 && /(pirate|matey|ahoy|aye|arrr|water|wine|drink|thirsty|hungry)/i.test(testText);
+          const hasQ = /[?]/.test(testText) || /^(what|how|why|who|where|when|do|did|can|could|would|will|is|are|was|were|have|has)\s/i.test(testText);
+          const hasTW = /(paul|lydia|baptis|convert|belie|christ|jesus|synagogue|roman|jew|gentil|pray|worship|trade|purple|dye|cloth|thyatira|philippi|spirit|church|community|letter|gospel|apostle|god|faith|messiah|river|gangites|preach|teacher|crucif|resurrect)/i.test(testText);
+          const isNonsense = wc >= 3 && !hasQ && len < 50 && !hasTW;
           const substantive = wc >= 3 && len > 10 && !isPleasantry && !isNonsense;
-          ui.addSystemNote(`🔧 Filter check: "${testText}" — ${wc} words, ${len} chars\npleasantry=${isPleasantry} nonsense=${isNonsense} → ${substantive ? "PASSES (detection will run)" : "BLOCKED (detection skipped)"}`);
+          ui.addSystemNote(`🔧 Filter check: "${testText}" — ${wc} words, ${len} chars\npleasantry=${isPleasantry} question=${hasQ} topic=${hasTW} → ${substantive ? "PASSES" : "BLOCKED"}`);
           return;
         }
 
@@ -219,10 +221,9 @@ export async function mount(host?: HTMLElement): Promise<void> {
           const len = testText.length;
           // Run code filter
           const isPleasantry = /^(hi|hello|hey|how are you|how do you do|nice to meet|good to see|greetings|thanks|thank you|good|nice|ok|okay|yes|no|sure|please|lol|haha|ahoy|yo|sup|cheers|bye|goodbye|see ya|cya)[\s.!?,]*$/i.test(testText);
-          const nw = /(pirate|matey|ahoy|aye|arrr|yar|landlubber|sea\s+throat|shiver\s+me\s+timbers)/i.test(testText);
-          const fd = /(water|wine|drink|thirsty|hungry|bread|cheese|olives|figs)/i.test(testText);
-          const tw = /(paul|lydia|baptis|convert|belie|christ|jesus|synagogue|roman|jew|gentil|pray|worship|trade|purple|dye|cloth|thyatira|philippi|spirit|church|community|letter|gospel|apostle|god|faith|messiah|river|gangites|preach|teacher|crucif|resurrect)/i.test(testText);
-          const isNonsense = (nw || fd) && !tw;
+          const hasQ = /[?]/.test(testText) || /^(what|how|why|who|where|when|do|did|can|could|would|will|is|are|was|were|have|has)\s/i.test(testText);
+          const hasTW = /(paul|lydia|baptis|convert|belie|christ|jesus|synagogue|roman|jew|gentil|pray|worship|trade|purple|dye|cloth|thyatira|philippi|spirit|church|community|letter|gospel|apostle|god|faith|messiah|river|gangites|preach|teacher|crucif|resurrect)/i.test(testText);
+          const isNonsense = wc >= 3 && !hasQ && len < 50 && !hasTW;
           const blocked = wc < 3 || len <= 10 || isPleasantry || isNonsense;
 
           if (blocked) {
@@ -276,18 +277,16 @@ export async function mount(host?: HTMLElement): Promise<void> {
           const wc = quoted.split(/\s+/).filter(Boolean).length;
           const len = quoted.length;
           const pleasant = /^(hi|hello|hey|how are you|how do you do|nice to meet|good to see|greetings|thanks|thank you|good|nice|ok|okay|yes|no|sure|please|lol|haha|ahoy|yo|sup|cheers|bye|goodbye|see ya|cya)[\s.!?,]*$/i.test(quoted);
-          const nw = /(pirate|matey|ahoy|aye|arrr|yar|landlubber|sea\s+throat|shiver\s+me\s+timbers)/i.test(quoted);
-          const fd = /(water|wine|drink|thirsty|hungry|bread|cheese|olives|figs)/i.test(quoted);
-          const tw = /(paul|lydia|baptis|convert|belie|christ|jesus|synagogue|roman|jew|gentil|pray|worship|trade|purple|dye|cloth|thyatira|philippi|spirit|church|community|letter|gospel|apostle|god|faith|messiah|river|gangites|preach|teacher|crucif|resurrect)/i.test(quoted);
-          const nonsense = (nw || fd) && !tw;
+          const hasQ = /[?]/.test(quoted) || /^(what|how|why|who|where|when|do|did|can|could|would|will|is|are|was|were|have|has)\s/i.test(quoted);
+          const hasTW = /(paul|lydia|baptis|convert|belie|christ|jesus|synagogue|roman|jew|gentil|pray|worship|trade|purple|dye|cloth|thyatira|philippi|spirit|church|community|letter|gospel|apostle|god|faith|messiah|river|gangites|preach|teacher|crucif|resurrect)/i.test(quoted);
+          const nonsense = wc >= 3 && !hasQ && len < 50 && !hasTW;
           const blocked = wc < 3 || len <= 10 || pleasant || nonsense;
           if (blocked) {
             const reasons: string[] = [];
             if (wc < 3) reasons.push(`${wc} words < 3`);
             if (len <= 10) reasons.push("too short");
             if (pleasant) reasons.push("pure pleasantry");
-            if (nonsense && !tw) reasons.push("pirate/joke without topic word");
-            if (fd && !tw) reasons.push("food/drink without topic word");
+            if (nonsense) reasons.push("no question, no topic word, under 40 chars");
             filterAnalysis = `Code filter: BLOCKED (${reasons.join(", ")}). The message was never sent to the LLM for evaluation.`;
           } else {
             filterAnalysis = `Code filter: PASSED (${wc} words, ${len} chars). Message was sent to LLM for evaluation.`;
@@ -380,12 +379,11 @@ Answer specifically — analyze why the detection system made the decision it di
       const wordCount = trimmed.split(/\s+/).filter(Boolean).length;
       // Pure pleasantries and social niceties (nothing substantive)
       const isPleasantry = /^(hi|hello|hey|how are you|how do you do|nice to meet|good to see|greetings|thanks|thank you|good|nice|ok|okay|yes|no|sure|please|lol|haha|ahoy|yo|sup|cheers|bye|goodbye|see ya|cya)[\s.!?,]*$/i.test(trimmed);
-      // Messages that are jokes or food/drink requests without any real content
-      const hasNonsenseWord = /(pirate|matey|ahoy|aye|arrr|yar|landlubber|sea\s+throat|shiver\s+me\s+timbers)/i.test(trimmed);
-      const hasFoodDrink = /(water|wine|drink|thirsty|hungry|bread|cheese|olives|figs)/i.test(trimmed);
-      const hasTopicWord = /(paul|lydia|baptis|convert|belie|christ|jesus|synagogue|roman|jew|gentil|pray|worship|trade|purple|dye|cloth|thyatira|philippi|spirit|church|community|letter|gospel|apostle|peter|sabbath|river|gangites|god|faith|messiah|savior|teacher|preach|miracle|crucif|resurrect)/i.test(trimmed);
-      // Block if it has nonsense/food words but no real topic words
-      const isNonsense = (hasNonsenseWord || hasFoodDrink) && !hasTopicWord;
+      // Generic nonsense detector — catches role-play-breaking messages
+      // without enumerating specific words. A message is nonsense if it's
+      // short, doesn't ask a question, and lacks any substantive content.
+      const hasQuestion = /[?]/.test(trimmed) || /^(what|how|why|who|where|when|do|did|can|could|would|will|is|are|was|were|have|has)\s/i.test(trimmed);
+      const isNonsense = wordCount >= 3 && !hasQuestion && trimmed.length < 50 && !/(paul|lydia|baptis|convert|belie|christ|jesus|synagogue|roman|jew|gentil|pray|worship|trade|purple|dye|cloth|thyatira|philippi|spirit|church|community|letter|gospel|apostle|god|faith|messiah|river|gangites|preach|teacher|crucif|resurrect)/i.test(trimmed);
       // Need at least 3 words AND enough length to be substantive AND not nonsense
       const isSubstantive = wordCount >= 3 && trimmed.length > 10 && !isPleasantry && !isNonsense;
 
