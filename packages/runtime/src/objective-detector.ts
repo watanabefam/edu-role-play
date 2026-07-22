@@ -1,13 +1,35 @@
-import type { ChatMessage, CompositionData, ObjectiveState, ObjectiveStatusMap, Provider } from "./types";
+import type { ChatMessage, CompositionData, Provider } from "./types";
+import { ObjectiveState } from "./types";
 
-function extractJsonObject(text: string): unknown {
-  const match = text.match(/\{[\s\S]*\}/);
-  if (!match) return null;
-  try {
-    return JSON.parse(match[0]);
-  } catch {
-    return null;
+/**
+ * Parse a comma/line-separated list of objective IDs from the LLM reply.
+ * Falls back to JSON array parsing for backward compatibility.
+ */
+function parseIdList(text: string): string[] {
+  const cleaned = text.replace(/```(?:json)?\s*/gi, "").replace(/\s*```/g, "").trim();
+
+  // Try JSON array first (handles [{"id":"x","state":2},...] format)
+  const jsonMatch = cleaned.match(/\[[\s\S]*\]/);
+  if (jsonMatch) {
+    try {
+      const parsed = JSON.parse(jsonMatch[0]);
+      if (Array.isArray(parsed)) {
+        // Array of objects with id field
+        const ids = parsed
+          .filter((v: unknown) => v && typeof v === "object" && typeof (v as Record<string, unknown>).id === "string")
+          .map((v: unknown) => (v as Record<string, unknown>).id as string)
+          .filter(Boolean);
+        if (ids.length > 0) return ids;
+      }
+    } catch { /* fall through */ }
   }
+
+  // Fallback: comma or newline separated list
+  const items = cleaned
+    .split(/[\n,]+/)
+    .map((s) => s.replace(/^[-*\d.\s]+/, "").trim())
+    .filter((s) => s.length > 0);
+  return items;
 }
 
 export async function detectCompletedObjectives(
@@ -15,9 +37,6 @@ export async function detectCompletedObjectives(
   comp: CompositionData,
   history: ChatMessage[],
 ): Promise<ObjectiveStatusMap> {
-  // Only include objectives not yet complete (skip already-green ones)
-  // The caller passes the full history so the detector has enough context.
-
   const transcript = history
     .filter((m) => m.role !== "system")
     .map((m) => `${m.role === "user" ? "LEARNER" : "PERSONA"}: ${m.content}`)
@@ -28,39 +47,33 @@ export async function detectCompletedObjectives(
     .join("\n");
 
   const prompt =
-    `Given this conversation transcript and objective list, score each objective:\n\n` +
-    `Objectives:\n${objectiveList}\n\nTranscript:\n${transcript}\n\n` +
-    `For each objective, return a JSON object keyed by objective id. ` +
-    `Each value must have:\n` +
-    `- "state": 0 (no evidence), 1 (partial progress, threshold not yet met), or 2 (fully satisfied)\n` +
-    `- "evidence": the specific quote(s) from the transcript that support your verdict\n` +
-    `- "count": a human-readable summary of progress, e.g. "2 of 2 questions asked" or "1 of 2 required" (omit if not applicable)\n\n` +
-    `Example:\n` +
-    `{"ask-contextual-questions":{"state":2,"evidence":"Student asked 'What was it like to hear Paul preach?','How did your household react?'","count":"2 of 2 questions"}}\n\n` +
-    `Return ONLY the JSON object, no prose.`;
+    `Review the conversation below. For each objective, decide if the learner has made progress.\n` +
+    `Return the IDs of objectives where some progress was made — one per line, no numbers or bullets.\n` +
+    `If an objective requires multiple actions (e.g. "ask at least two questions"), include it\n` +
+    `even if only partially met — the scoring will determine partial credit.\n\n` +
+    `Objectives:\n${objectiveList}\n\n` +
+    `Conversation:\n${transcript}\n\n` +
+    `Return ONLY the objective IDs, one per line. Example:\n` +
+    `ask-contextual-questions\nexplore-conversion-experience`;
 
   try {
     const reply = await provider.chat(
       [
-        { role: "system", content: "You are an observation grader. Output only JSON." },
+        { role: "system", content: "You are an objective tracker. List which objectives have any evidence." },
         { role: "user", content: prompt },
       ],
       { temperature: 0 },
     );
-    const parsed = extractJsonObject(reply) as Record<string, unknown> | null;
-    if (!parsed || typeof parsed !== "object") return new Map();
+    const ids = parseIdList(reply);
+    if (ids.length === 0) return new Map();
+
+    // Valid objective IDs from the composition
+    const validIds = new Set(comp.objectives.map((o) => o.id));
 
     const result: ObjectiveStatusMap = new Map();
-    for (const [id, val] of Object.entries(parsed)) {
-      if (typeof val !== "object" || !val) continue;
-      const entry = val as Record<string, unknown>;
-      const state = Number(entry.state);
-      if (state !== 0 && state !== 1 && state !== 2) continue;
-      result.set(id, {
-        state: state as ObjectiveState,
-        evidence: typeof entry.evidence === "string" ? entry.evidence : "",
-        count: typeof entry.count === "string" ? entry.count : undefined,
-      });
+    for (const id of ids) {
+      if (!validIds.has(id)) continue;
+      result.set(id, { state: ObjectiveState.Complete, evidence: "detected" });
     }
     return result;
   } catch {

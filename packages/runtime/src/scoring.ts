@@ -1,4 +1,5 @@
-import type { ChatMessage, CompositionData, ObjectiveState, ObjectiveStatusMap, Provider, ScoreResult } from "./types";
+import type { ChatMessage, CompositionData, Provider, ScoreResult } from "./types";
+import { ObjectiveState, type ObjectiveStatusMap } from "./types";
 
 function extractJsonObject(text: string): unknown {
   const match = text.match(/\{[\s\S]*\}/);

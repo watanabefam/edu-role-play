@@ -6,7 +6,8 @@ import { createResultSnapshot, createSessionId } from "./results";
 import { scoreTranscript } from "./scoring";
 import { createScorm12Adapter } from "./scorm";
 import { t } from "./locales";
-import type { ActivityEvent, ChatMessage, ObjectiveState, ObjectiveStatusMap, Provider, ResultSnapshot, RuntimeConfig } from "./types";
+import type { ActivityEvent, ChatMessage, Provider, ResultSnapshot, RuntimeConfig } from "./types";
+import { ObjectiveState, type ObjectiveStatusMap } from "./types";
 import { UI } from "./ui";
 
 function looksLikeNetworkBlock(err: unknown): boolean {

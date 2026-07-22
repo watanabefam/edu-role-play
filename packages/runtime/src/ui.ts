@@ -2,11 +2,11 @@ import type {
   ChatMessage,
   CompositionData,
   Difficulty,
-  ObjectiveState,
-  ObjectiveStatusMap,
   ResultSnapshot,
   ScoreResult,
 } from "./types";
+import { ObjectiveState } from "./types";
+import type { ObjectiveStatusMap } from "./types";
 import { t } from "./locales";
 
 interface SpeechRecognitionAlt {
