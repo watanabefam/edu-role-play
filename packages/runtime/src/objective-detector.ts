@@ -97,17 +97,17 @@ export async function detectCompletedObjectives(
         { role: "system", content: "You are an objective tracker. List which objectives have any evidence." },
         { role: "user", content: prompt },
       ],
-      { temperature: 0 },
+      { temperature: 0, jsonMode: true },
     );
     let entries = parseEntries(reply);
-    // Retry once on parse failure (LLM sometimes deviates from format)
+    // Retry once on parse failure with slightly higher temperature
     if (entries.length === 0) {
       const retry = await provider.chat(
         [
           { role: "system", content: "You are an objective tracker." },
           { role: "user", content: prompt },
         ],
-        { temperature: 0.1 },
+        { temperature: 0.1, jsonMode: true },
       );
       entries = parseEntries(retry);
     }

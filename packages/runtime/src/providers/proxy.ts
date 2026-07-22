@@ -26,6 +26,8 @@ export function createProxyProvider(config: RuntimeConfig): Provider {
     };
     if (model) body.model = model;
     if (stream) body.stream = true;
+    // Request JSON mode when caller opts in (reduces format deviations)
+    if (opts?.jsonMode) body.responseFormat = { type: "json_object" };
     return body;
   }
 

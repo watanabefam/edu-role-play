@@ -72,6 +72,7 @@ export interface ChatMessage {
 
 export interface ChatOpts {
   temperature?: number;
+  jsonMode?: boolean;  // requests response_format: { type: "json_object" }
 }
 
 export interface Provider {

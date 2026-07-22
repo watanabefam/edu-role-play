@@ -49,7 +49,7 @@ export async function scoreTranscript(
 
   let reply = "";
   try {
-    reply = await provider.chat(messages, { temperature: 0 });
+    reply = await provider.chat(messages, { temperature: 0, jsonMode: true });
   } catch (e) {
     reply = "";
   }
@@ -60,7 +60,7 @@ export async function scoreTranscript(
   if (!parsed || !Array.isArray(parsed.perObjective)) {
     // retry once
     try {
-      reply = await provider.chat(messages, { temperature: 0 });
+      reply = await provider.chat(messages, { temperature: 0, jsonMode: true });
       parsed = extractJsonObject(reply) as typeof parsed;
     } catch {
       /* swallow */
