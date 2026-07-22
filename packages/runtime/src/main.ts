@@ -179,16 +179,24 @@ export async function mount(host?: HTMLElement): Promise<void> {
     onSend: async (text) => {
       if (ended) return;
 
-      // Debug mode: send message directly to LLM bypassing the character
+      // Debug mode: send message directly to LLM or show system state
       const debugMatch = text.match(/^Debug:\s*(.*)/is);
       if (debugMatch) {
-        const query = debugMatch[1].trim();
+        const query = debugMatch[1].trim().toLowerCase();
         if (query) {
+          // Special debug commands for system introspection
+          if (query === "state" || query === "detected") {
+            const detected = Array.from(completedObjectives.entries()).map(([id, s]) =>
+              `${id}: state=${s.state === ObjectiveState.Complete ? "GREEN" : s.state === ObjectiveState.Partial ? "YELLOW" : "GREY"}${s.evidence ? ` evidence="${s.evidence}"` : ""}${s.count ? ` count="${s.count}"` : ""}`
+            ).join("\n");
+            ui.addSystemNote(`🔧 Detection state:\n${detected || "(none detected)"}`);
+            return;
+          }
           ui.appendMessage({ role: "user", content: text });
           ui.setBusy(true);
           ui.showTyping(true);
-          const objectivesList = comp.objectives.map(o => `- ${o.id}: ${o.text}`).join("\n");
-          const debugContext = `Debug session. Current objectives:\n${objectivesList}\nAnswer helpfully with whatever detail is relevant.`;
+          const objectivesList = comp.objectives.map(o => `- ${o.id}: ${o.detectText || o.text}`).join("\n");
+          const debugContext = `Debug session. Current objectives (AI-facing):\n${objectivesList}\nAnswer helpfully with whatever detail is relevant.`;
           try {
             const reply = await provider.chat(
               [
@@ -231,10 +239,12 @@ export async function mount(host?: HTMLElement): Promise<void> {
       // Skip detection on non-substantive messages (greetings, pleasantries)
       const trimmed = text.trim();
       const wordCount = trimmed.split(/\s+/).filter(Boolean).length;
-      // Pure pleasantries — only greeting/social words, zero substantive content
+      // Pure pleasantries and social niceties (nothing substantive)
       const isPleasantry = /^(hi|hello|hey|how are you|how do you do|nice to meet|good to see|greetings|thanks|thank you|good|nice|ok|okay|yes|no|sure|please|lol|haha|ahoy|yo|sup|cheers|bye|goodbye|see ya|cya)[\s.!?,]*$/i.test(trimmed);
-      // Need at least 3 words AND enough length to be substantive
-      const isSubstantive = wordCount >= 3 && trimmed.length > 10 && !isPleasantry;
+      // Short messages that are just jokes or food/drink requests (under 30 chars)
+      const isNonsense = trimmed.length < 30 && /(pirate|matey|ahoy|aye|arrr|water|wine|drink|thirsty|hungry)/i.test(trimmed);
+      // Need at least 3 words AND enough length to be substantive AND not nonsense
+      const isSubstantive = wordCount >= 3 && trimmed.length > 10 && !isPleasantry && !isNonsense;
       if (turn > 0 && turn % checkEvery === 0 && isSubstantive) {
         const latest = await detectCompletedObjectives(provider, comp, history);
         // Merge: first detection → yellow, re-detected → green
