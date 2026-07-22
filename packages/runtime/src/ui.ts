@@ -1063,20 +1063,43 @@ export class UI {
         if (score > 0) {
           const mid = a + segAngle * (score / 100);
           const segFill = score >= 70 ? green : amber;
-          segs += `<path d="${arcPath(a, mid)}" fill="none" stroke="${segFill}" stroke-width="${sw}" stroke-linecap="round" style="transition:d 0.4s"/>`;
+          segs += `<path d="${arcPath(a, mid)}" fill="none" stroke="${segFill}" stroke-width="${sw}" stroke-linecap="round"/>`;
         }
       }
       return `<svg width="18" height="18" viewBox="0 0 18 18" fill="none">${segs}</svg>`;
     }
 
-    // Single arc — fills proportionally
+    // Single arc — fills proportionally, smooth when SVG element persists
     const circ = 2 * Math.PI * r;
     return `<svg width="18" height="18" viewBox="0 0 18 18" fill="none">
       <circle cx="${cx}" cy="${cy}" r="${r}" stroke="${track}" stroke-width="${sw}"/>
       <circle cx="${cx}" cy="${cy}" r="${r}" stroke="${fill}" stroke-width="${sw}"
         stroke-dasharray="${circ}" stroke-dashoffset="${circ * (1 - fraction)}"
-        stroke-linecap="round" transform="rotate(-90 ${cx} ${cy})" style="transition:stroke-dashoffset 0.4s"/>
+        stroke-linecap="round" transform="rotate(-90 ${cx} ${cy})" style="transition:stroke-dashoffset 0.5s ease"/>
     </svg>`;
+  }
+
+  /** Update a ring SVG's fill arc to a target fraction, animating smoothly. */
+  private setRingFill(checkEl: HTMLElement, fraction: number): void {
+    const svg = checkEl.querySelector("svg");
+    if (!svg) { checkEl.innerHTML = this.ringIndicator(fraction); return; }
+    // Try the persistent arc first (circle with stroke-dasharray attribute)
+    let arc: SVGCircleElement | null = null;
+    for (const c of svg.querySelectorAll("circle")) {
+      if (c.hasAttribute("stroke-dasharray")) { arc = c; break; }
+    }
+    if (!arc) { checkEl.innerHTML = this.ringIndicator(fraction); return; }
+    const circ = parseFloat(arc.getAttribute("stroke-dasharray")!);
+    if (!circ) { checkEl.innerHTML = this.ringIndicator(fraction); return; }
+
+    const target = circ * (1 - fraction);
+    const current = parseFloat(arc.getAttribute("stroke-dashoffset") || "0");
+
+    // Use Web Animations API for reliable cross-browser animation
+    arc.animate(
+      [{ strokeDashoffset: String(current) }, { strokeDashoffset: String(target) }],
+      { duration: 500, easing: "ease", fill: "forwards" }
+    );
   }
 
   private renderObjectives(): void {
@@ -1086,48 +1109,65 @@ export class UI {
       host.innerHTML = `<div style="font-size:12.5px;color:oklch(60% 0.01 255)">${escapeHtml(this.tr("noObjectives"))}</div>`;
       return;
     }
-    host.innerHTML = this.comp.objectives
-      .map((o) => {
-        const status = this.objectivesDone.get(o.id);
-        if (!status || status.state === ObjectiveState.NotMet) {
-          return `<div class="objective-item">
-            <span class="check">${this.ringIndicator(0)}</span>
-            <span>${escapeHtml(o.text || o.id)}</span>
-          </div>`;
-        }
-        if (status.state === ObjectiveState.Partial) {
-          const label = status.count || "";
-          let fraction = 0.25;
-          let segScores: number[] | undefined;
-          // Parse comma-separated scores: "70,85"
-          if (label && /^\d+(\.\d+)?(\s*,\s*\d+(\.\d+)?)+$/.test(label)) {
-            const scores = label.split(",").map(s => Number(s.trim()));
-            if (scores.length > 1 && scores.every(s => Number.isFinite(s))) {
-              const total = scores.reduce((a, b) => a + b, 0);
-              fraction = Math.min(total / (scores.length * 100), 0.99);
-              segScores = scores;
-            }
-          }
-          // Fallback: parse "N/M" format
-          if (!segScores && label.includes("/")) {
-            const parts = label.split("/");
-            const n = Number(parts[0]), d = Number(parts[1]);
-            if (n > 0 && d > 0) {
-              fraction = Math.min(n / d, 0.99);
-              segScores = Array(d).fill(0).map((_, i) => i < n ? 100 : 0);
-            }
-          }
-          return `<div class="objective-item partial">
-            <span class="check">${this.ringIndicator(fraction, segScores)}</span>
-            <span>${escapeHtml(o.text || o.id)}</span>
-          </div>`;
-        }
-        return `<div class="objective-item done">
-          <span class="check">${this.ringIndicator(1)}</span>
+
+    // First render: create the full structure
+    if (!host.firstElementChild) {
+      host.innerHTML = this.comp.objectives
+        .map((o, idx) => `<div class="objective-item" data-oidx="${idx}">
+          <span class="check">${this.ringIndicator(0)}</span>
           <span>${escapeHtml(o.text || o.id)}</span>
-        </div>`;
-      })
-      .join("");
+        </div>`)
+        .join("");
+    }
+
+    // Subsequent renders: update each item's ring SVG in-place
+    this.comp.objectives.forEach((o, idx) => {
+      const item = host.querySelector(`[data-oidx="${idx}"]`);
+      if (!item) return;
+      const checkEl = item.querySelector(".check");
+      if (!checkEl) return;
+
+      const status = this.objectivesDone.get(o.id);
+      if (!status || status.state === ObjectiveState.NotMet) {
+        item.className = "objective-item";
+        checkEl.innerHTML = this.ringIndicator(0);
+        return;
+      }
+
+      if (status.state === ObjectiveState.Partial) {
+        item.className = "objective-item partial";
+        const label = status.count || "";
+        let fraction = 0.25;
+        let segScores: number[] | undefined;
+        if (label && /^\d+(\.\d+)?(\s*,\s*\d+(\.\d+)?)+$/.test(label)) {
+          const scores = label.split(",").map(s => Number(s.trim()));
+          if (scores.length > 1 && scores.every(s => Number.isFinite(s))) {
+            const total = scores.reduce((a, b) => a + b, 0);
+            fraction = Math.min(total / (scores.length * 100), 0.99);
+            segScores = scores;
+          }
+        }
+        if (!segScores && label.includes("/")) {
+          const parts = label.split("/");
+          const n = Number(parts[0]), d = Number(parts[1]);
+          if (n > 0 && d > 0) {
+            fraction = Math.min(n / d, 0.99);
+            segScores = Array(d).fill(0).map((_, i) => i < n ? 100 : 0);
+          }
+        }
+        if (segScores && segScores.length > 1) {
+          // Segmented: recreate SVG (no smooth transition for segments)
+          checkEl.innerHTML = this.ringIndicator(fraction, segScores);
+        } else {
+          this.setRingFill(checkEl, fraction);
+        }
+        return;
+      }
+
+      // State 2 - complete
+      item.className = "objective-item done";
+      checkEl.innerHTML = this.ringIndicator(1);
+    });
   }
 
   private renderInputBarNode(wide = false): HTMLElement {
