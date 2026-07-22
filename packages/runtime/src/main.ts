@@ -200,9 +200,11 @@ export async function mount(host?: HTMLElement): Promise<void> {
 
       // Skip detection on non-substantive messages (greetings, pleasantries)
       const trimmed = text.trim();
+      const wordCount = trimmed.split(/\s+/).filter(Boolean).length;
       // Pure pleasantries — only greeting/social words, zero substantive content
-      const isPurePleasantry = /^(hi|hello|hey|how are you|how do you do|nice to meet|good to see|greetings|thanks|thank you|good|nice|ok|okay|yes|no|sure|please|lol|haha)[\s.!?,]*$/i.test(trimmed);
-      const isSubstantive = trimmed.length > 10 && !isPurePleasantry;
+      const isPleasantry = /^(hi|hello|hey|how are you|how do you do|nice to meet|good to see|greetings|thanks|thank you|good|nice|ok|okay|yes|no|sure|please|lol|haha|ahoy|yo|sup|cheers|bye|goodbye|see ya|cya)[\s.!?,]*$/i.test(trimmed);
+      // Need at least 3 words AND enough length to be substantive
+      const isSubstantive = wordCount >= 3 && trimmed.length > 10 && !isPleasantry;
       if (turn > 0 && turn % checkEvery === 0 && isSubstantive) {
         const latest = await detectCompletedObjectives(provider, comp, history);
         // Merge: respect detection quality, never decrease state
