@@ -59,13 +59,18 @@
         the detection LLM uses. This keeps the student view natural while
         giving the detector concrete anchors and counter-examples.
         
+        COUNTS should be marked as "examples, not exhaustive" so the detector
+        remains flexible for valid on-topic responses that don't use exact
+        keywords from the examples list.
+        
         Good:
           Text: "Ask about her personal experience of conversion."
           detect="Ask what she felt/heard during Paul's preaching, how she decided
-                  to be baptised, or what changed afterward. Does NOT count: greetings,
-                  jokes, water requests, unrelated chat."
-        
-        Balance: give examples of what counts AND what doesn't count.
+                  to be baptised, or what changed afterward. COUNTS (examples, not
+                  exhaustive): feelings at baptism, what convinced her, household
+                  reaction. DOES NOT COUNT: greetings, jokes, water requests,
+                  unrelated chat. Count any on-topic question about conversion —
+                  do not require specific keywords from the examples list."
       -->
       <edu-objective id="objective-one" detect="[AI-facing — specific examples + counter-examples. See guide above.]">[Student-facing — natural, role-play friendly. Shown in sidebar.]</edu-objective>
       <edu-objective id="objective-two" detect="[AI-facing — specific examples + counter-examples.]">[Student-facing — natural, role-play friendly.]</edu-objective>
