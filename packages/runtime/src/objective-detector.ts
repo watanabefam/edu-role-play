@@ -7,45 +7,16 @@ interface DetectedEntry {
   count?: string;
 }
 
-/** Parse JSON array or fallback line format. */
+/** Parse line-separated objective IDs. State always defaults to 2 (complete). */
 function parseEntries(text: string): DetectedEntry[] {
   const cleaned = text.replace(/```(?:json)?\s*/gi, "").replace(/\s*```/g, "").trim();
 
-  // Try JSON array of objects: [{"id":"x","state":1,"scores":[70,85]}]
-  const jsonMatch = cleaned.match(/\[[\s\S]*\]/);
-  if (jsonMatch) {
-    try {
-      const parsed = JSON.parse(jsonMatch[0]);
-      if (Array.isArray(parsed)) {
-        const entries: DetectedEntry[] = [];
-        for (const item of parsed) {
-          if (!item || typeof item !== "object") continue;
-          const id = String((item as Record<string, unknown>).id || "");
-          const state = Number((item as Record<string, unknown>).state);
-          if (!id || (state !== 1 && state !== 2)) continue;
-          const scores = (item as Record<string, unknown>).scores;
-          const count = Array.isArray(scores) ? scores.join(",") : undefined;
-          entries.push({ id, state, count });
-        }
-        if (entries.length > 0) return entries;
-      }
-    } catch { /* fall through */ }
-  }
-
-  // Fallback: line-separated format (backward compat)
+  // Line-separated format: one ID per line or comma-separated
   const result: DetectedEntry[] = [];
   for (const line of cleaned.split(/[\n,]+/)) {
     let trimmed = line.replace(/^[-*\d.\s<>]+/, "").trim();
     if (!trimmed) continue;
-    let count: string | undefined;
-    const pipeIdx = trimmed.lastIndexOf("|");
-    if (pipeIdx > 0) {
-      const suffix = trimmed.slice(pipeIdx + 1).trim();
-      if (/^\d+(\.\d+)?(\s*,\s*\d+(\.\d+)?)*$/.test(suffix) || /^\d+\s*\/\s*\d+$/.test(suffix)) {
-        count = suffix;
-        trimmed = trimmed.slice(0, pipeIdx).trim();
-      }
-    }
+    // Try "id: state" with state override
     const colon = trimmed.lastIndexOf(":");
     if (colon > 0) {
       let id = trimmed.slice(0, colon).trim();
@@ -53,11 +24,12 @@ function parseEntries(text: string): DetectedEntry[] {
       let stateRaw = trimmed.slice(colon + 1).trim();
       stateRaw = stateRaw.replace(/^[^\d]+/, "");
       const state = Number(stateRaw);
-      if (id && (state === 1 || state === 2)) {
-        result.push({ id, state, count });
+      if (id && (state >= 0 && state <= 2)) {
+        result.push({ id, state: state || 2 });
         continue;
       }
     }
+    // Plain ID — state 2 (complete)
     result.push({ id: trimmed, state: 2 });
   }
   return result;
@@ -78,36 +50,34 @@ export async function detectCompletedObjectives(
     .join("\n");
 
   const prompt =
-    `You are grading a student interviewing a historical figure.\n` +
-    `Only the LEARNER's (student's) actual questions and statements count as evidence.` +
-    `Greetings, pleasantries, and accepting offered items do NOT count.\n\n` +
-    `For each objective, decide if the LEARNER asked substantive questions or made ` +
-    `specific, relevant statements that demonstrate progress.\n` +
-    `Return a JSON array: [{"id":"...","state":1|2,"scores":[per-item 0-100]}]\n` +
-    `state=1 means some progress but below threshold. state=2 means threshold met.\n` +
-    `Omit objectives where the learner has not demonstrated any real progress.\n\n` +
-    `Example:\n` +
-    `[{"id":"ask-contextual-questions","state":1,"scores":[70]}]\n\n` +
-    `Objectives:\n${objectiveList}\n\n` +
-    `Conversation:\n${transcript}`;
+    `Only the LEARNER's actual questions count. Greetings, pleasantries, ` +
+    `and accepting items do NOT count.\n\n` +
+    `List the objective IDs where the learner has made any real progress — ` +
+    `one per line, no formatting, using the exact ids below.\n` +
+    `Include objectives where progress is partial (started but not complete).\n` +
+    `Omit objectives with no real progress.\n\n` +
+    `Objective ids (use exactly these):\n${comp.objectives.map((o) => o.id).join("\n")}\n\n` +
+    `Conversation:\n${transcript}\n\n` +
+    `Return ONLY the objective IDs, one per line. Example:\n` +
+    `ask-contextual-questions\nexplore-conversion-experience`;
 
   try {
     const reply = await provider.chat(
       [
-        { role: "system", content: "You return JSON arrays of objective assessments." },
+        { role: "system", content: "You list objective IDs where the learner made progress." },
         { role: "user", content: prompt },
       ],
-      { temperature: 0, jsonMode: true },
+      { temperature: 0 },
     );
     let entries = parseEntries(reply);
-    // Retry once on parse failure
+    // Retry once on parse failure with slight temperature variation
     if (entries.length === 0) {
       const retry = await provider.chat(
         [
-          { role: "system", content: "You return JSON arrays of objective assessments." },
+          { role: "system", content: "You list objective IDs." },
           { role: "user", content: prompt },
         ],
-        { temperature: 0.1, jsonMode: true },
+        { temperature: 0.1 },
       );
       entries = parseEntries(retry);
     }
