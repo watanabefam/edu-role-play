@@ -1024,23 +1024,23 @@ export class UI {
     this.renderObjectives();
   }
 
-  /** Build an SVG ring indicator. Supports segmented progress with per-item scores. */
-  private ringIndicator(centerText: string, fraction: number, segmentScores?: number[]): string {
+  /** Build an SVG ring indicator — fills proportionally, no numbers. */
+  private ringIndicator(fraction: number, segmentScores?: number[]): string {
     const cx = 9, cy = 9, r = 6.5, sw = 2;
     const green = "oklch(52% 0.18 155)";
     const amber = "oklch(65% 0.18 85)";
     const track = "oklch(85% 0.01 240)";
     const fill = fraction >= 1 ? green : amber;
 
-    // Filled ring with checkmark when complete
-    if (fraction >= 1 && !centerText) {
+    // Complete: solid green circle with checkmark
+    if (fraction >= 1) {
       return `<svg width="18" height="18" viewBox="0 0 18 18" fill="none">
         <circle cx="${cx}" cy="${cy}" r="${r}" fill="${fill}" stroke="${fill}" stroke-width="${sw}"/>
         <path d="M5.5 9.5l2.5 2.5 4.5-5" stroke="white" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
       </svg>`;
     }
 
-    // Segmented display with per-item scores
+    // Segmented: each segment fills proportionally to its score
     if (segmentScores && segmentScores.length > 1) {
       const segments = segmentScores.length;
       const gap = 3;
@@ -1059,28 +1059,23 @@ export class UI {
         const a = i * (segAngle + gap);
         const b = a + segAngle;
         const score = Math.max(0, Math.min(100, segmentScores[i]));
-        // Track arc (full)
         segs += `<path d="${arcPath(a, b)}" fill="none" stroke="${track}" stroke-width="${sw}" stroke-linecap="round"/>`;
-        // Fill arc (proportional to score)
         if (score > 0) {
           const mid = a + segAngle * (score / 100);
           const segFill = score >= 70 ? green : amber;
-          segs += `<path d="${arcPath(a, mid)}" fill="none" stroke="${segFill}" stroke-width="${sw}" stroke-linecap="round" style="transition: d 0.4s"/>`;
+          segs += `<path d="${arcPath(a, mid)}" fill="none" stroke="${segFill}" stroke-width="${sw}" stroke-linecap="round" style="transition:d 0.4s"/>`;
         }
       }
-      return `<svg width="18" height="18" viewBox="0 0 18 18" fill="none">${segs}
-        <text x="${cx}" y="${cy + 1}" text-anchor="middle" font-size="6" font-weight="700" fill="${fill}">${escapeHtml(centerText)}</text>
-      </svg>`;
+      return `<svg width="18" height="18" viewBox="0 0 18 18" fill="none">${segs}</svg>`;
     }
 
-    // Single arc (backward compatible)
+    // Single arc — fills proportionally
     const circ = 2 * Math.PI * r;
     return `<svg width="18" height="18" viewBox="0 0 18 18" fill="none">
       <circle cx="${cx}" cy="${cy}" r="${r}" stroke="${track}" stroke-width="${sw}"/>
       <circle cx="${cx}" cy="${cy}" r="${r}" stroke="${fill}" stroke-width="${sw}"
         stroke-dasharray="${circ}" stroke-dashoffset="${circ * (1 - fraction)}"
-        stroke-linecap="round" transform="rotate(-90 ${cx} ${cy})" style="transition: stroke-dashoffset 0.4s"/>
-      <text x="${cx}" y="${cy + 1}" text-anchor="middle" font-size="7" font-weight="700" fill="${fill}">${escapeHtml(centerText)}</text>
+        stroke-linecap="round" transform="rotate(-90 ${cx} ${cy})" style="transition:stroke-dashoffset 0.4s"/>
     </svg>`;
   }
 
@@ -1096,12 +1091,12 @@ export class UI {
         const status = this.objectivesDone.get(o.id);
         if (!status || status.state === ObjectiveState.NotMet) {
           return `<div class="objective-item">
-            <span class="check">${this.ringIndicator("", 0)}</span>
+            <span class="check">${this.ringIndicator(0)}</span>
             <span>${escapeHtml(o.text || o.id)}</span>
           </div>`;
         }
         if (status.state === ObjectiveState.Partial) {
-          const label = status.count || "…";
+          const label = status.count || "";
           let fraction = 0.25;
           let segScores: number[] | undefined;
           // Parse comma-separated scores: "70,85"
@@ -1123,12 +1118,12 @@ export class UI {
             }
           }
           return `<div class="objective-item partial">
-            <span class="check">${this.ringIndicator(label, fraction, segScores)}</span>
+            <span class="check">${this.ringIndicator(fraction, segScores)}</span>
             <span>${escapeHtml(o.text || o.id)}</span>
           </div>`;
         }
         return `<div class="objective-item done">
-          <span class="check">${this.ringIndicator("", 1)}</span>
+          <span class="check">${this.ringIndicator(1)}</span>
           <span>${escapeHtml(o.text || o.id)}</span>
         </div>`;
       })
