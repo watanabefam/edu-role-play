@@ -198,7 +198,9 @@ export async function mount(host?: HTMLElement): Promise<void> {
       }
       ui.setBusy(false);
 
-      if (turn > 0 && turn % checkEvery === 0) {
+      // Skip detection on non-substantive messages (greetings, pleasantries)
+      const isSubstantive = text.length > 15 && !/^(hi|hello|hey|greetings|thanks|thank you|good|nice|ok|yes|no|sure|please)[\s.!?,]*$/i.test(text.trim());
+      if (turn > 0 && turn % checkEvery === 0 && isSubstantive) {
         const latest = await detectCompletedObjectives(provider, comp, history);
         // Merge: respect detection quality, never decrease state
         for (const [id, status] of latest) {
