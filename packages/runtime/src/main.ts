@@ -268,15 +268,39 @@ export async function mount(host?: HTMLElement): Promise<void> {
           return;
         }
 
-        // Debug: anything else — show help
-        const help = [
-          "Debug commands:",
-          "  Debug: on / off — toggle auto-debug output",
-          "  Debug: state — show current detection state",
-          '  Debug: filter "text" — test code-level filter only',
-          '  Debug: detect "text" — test filter + actual LLM detection',
-        ];
-        ui.addSystemNote(`🔧 ${help.join("\n")}`);
+        // Debug: anything else — try to detect quoted text, or show state
+        const quotedMatch = query.match(/"([^"]+)"|'([^']+)'/);
+        if (quotedMatch) {
+          const quoted = quotedMatch[1] || quotedMatch[2];
+          // Run the same logic as Debug: detect on the quoted text
+          const wc = quoted.split(/\s+/).filter(Boolean).length;
+          const len = quoted.length;
+          const pleasant = /^(hi|hello|hey|how are you|how do you do|nice to meet|good to see|greetings|thanks|thank you|good|nice|ok|okay|yes|no|sure|please|lol|haha|ahoy|yo|sup|cheers|bye|goodbye|see ya|cya)[\s.!?,]*$/i.test(quoted);
+          const nw = /(pirate|matey|ahoy|aye|arrr|yar|landlubber|sea\s+throat|shiver\s+me\s+timbers)/i.test(quoted);
+          const fd = /(water|wine|drink|thirsty|hungry|bread|cheese|olives|figs)/i.test(quoted);
+          const tw = /(paul|lydia|baptis|convert|belie|christ|jesus|synagogue|roman|jew|gentil|pray|worship|trade|purple|dye|cloth|thyatira|philippi|spirit|church|community|letter|gospel|apostle|god|faith|messiah|river|gangites|preach|teacher|crucif|resurrect)/i.test(quoted);
+          const nonsense = (nw || fd) && !tw;
+          const blocked = wc < 3 || len <= 10 || pleasant || nonsense;
+          let reasons: string[] = [];
+          if (blocked) {
+            if (wc < 3) reasons.push(`${wc} words < 3`);
+            if (len <= 10) reasons.push(`too short`);
+            if (pleasant) reasons.push("pure pleasantry");
+            if (nonsense && !tw) reasons.push("pirate/joke words without topic");
+            if (fd && !tw) reasons.push("food/drink without topic");
+            ui.addSystemNote(`🔧 Answer: "${quoted}" → BLOCKED by code filter (${reasons.join(", ")}). LLM never evaluated it.`);
+          } else {
+            const topicMatches = tw ? "contains topic word" : "no topic but passes other checks";
+            ui.addSystemNote(`🔧 Answer: "${quoted}" → PASSES filter (${wc} words, ${len} chars, ${topicMatches}). Would be sent to LLM for evaluation.`);
+          }
+        } else {
+          // No quoted text — show state
+          const lines = Array.from(completedObjectives.entries()).map(([id, s]) => {
+            const st = s.state === ObjectiveState.Complete ? "GREEN" : s.state === ObjectiveState.Partial ? "YELLOW" : "GREY";
+            return `${id}: ${st}`;
+          });
+          ui.addSystemNote(`🔧 Current state:\n${lines.join("\n") || "(none detected)"}\nTurn ${turn}/${turnCap}`);
+        }
         return;
       }
 
