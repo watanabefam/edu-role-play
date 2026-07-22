@@ -45,7 +45,10 @@ function parseEntries(text: string): DetectedEntry[] {
     if (colon > 0) {
       let id = trimmed.slice(0, colon).trim();
       id = id.replace(/^[^a-zA-Z0-9_]+|[^a-zA-Z0-9_-]+$/g, "");
-      const state = Number(trimmed.slice(colon + 1).trim());
+      let stateRaw = trimmed.slice(colon + 1).trim();
+      // Strip "STATE=" or other non-numeric prefixes the LLM sometimes adds
+      stateRaw = stateRaw.replace(/^[^\d]+/, "");
+      const state = Number(stateRaw);
       if (id && (state === 1 || state === 2)) {
         result.push({ id, state, count });
         continue;
