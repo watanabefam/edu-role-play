@@ -188,7 +188,7 @@ export async function mount(host?: HTMLElement): Promise<void> {
           ui.setBusy(true);
           ui.showTyping(true);
           const objectivesList = comp.objectives.map(o => `- ${o.id}: ${o.text}`).join("\n");
-          const debugContext = `Debug session. Objectives:\n${objectivesList}\nAnswer concisely in 1-2 sentences. Return raw data when asked.`;
+          const debugContext = `Debug session. Current objectives:\n${objectivesList}\nAnswer helpfully with whatever detail is relevant.`;
           try {
             const reply = await provider.chat(
               [
