@@ -7,46 +7,50 @@ interface DetectedEntry {
   count?: string;
 }
 
-/** Parse lines like "id: 2" or "id: 1", or just IDs. Falls back to JSON parsing. */
+/** Parse JSON array or fallback line format. */
 function parseEntries(text: string): DetectedEntry[] {
   const cleaned = text.replace(/```(?:json)?\s*/gi, "").replace(/\s*```/g, "").trim();
 
-  // Try JSON array first
+  // Try JSON array of objects: [{"id":"x","state":1,"scores":[70,85]}]
   const jsonMatch = cleaned.match(/\[[\s\S]*\]/);
   if (jsonMatch) {
     try {
       const parsed = JSON.parse(jsonMatch[0]);
       if (Array.isArray(parsed)) {
-        // Array of strings
-        const ids = parsed.filter((v): v is string => typeof v === "string" && v.length > 0);
-        if (ids.length > 0) return ids;
+        const entries: DetectedEntry[] = [];
+        for (const item of parsed) {
+          if (!item || typeof item !== "object") continue;
+          const id = String((item as Record<string, unknown>).id || "");
+          const state = Number((item as Record<string, unknown>).state);
+          if (!id || (state !== 1 && state !== 2)) continue;
+          const scores = (item as Record<string, unknown>).scores;
+          const count = Array.isArray(scores) ? scores.join(",") : undefined;
+          entries.push({ id, state, count });
+        }
+        if (entries.length > 0) return entries;
       }
     } catch { /* fall through */ }
   }
 
-  // Fallback: line-separated with optional ":state | N/M" suffix
+  // Fallback: line-separated format (backward compat)
   const result: DetectedEntry[] = [];
   for (const line of cleaned.split(/[\n,]+/)) {
     let trimmed = line.replace(/^[-*\d.\s<>]+/, "").trim();
     if (!trimmed) continue;
-    // Extract per-item scores after "|" if present (e.g. "| 70,85")
     let count: string | undefined;
     const pipeIdx = trimmed.lastIndexOf("|");
     if (pipeIdx > 0) {
       const suffix = trimmed.slice(pipeIdx + 1).trim();
-      // Check for comma-separated scores like "70,85" or "N/M" format
       if (/^\d+(\.\d+)?(\s*,\s*\d+(\.\d+)?)*$/.test(suffix) || /^\d+\s*\/\s*\d+$/.test(suffix)) {
         count = suffix;
         trimmed = trimmed.slice(0, pipeIdx).trim();
       }
     }
-    // Try "id: state" format
     const colon = trimmed.lastIndexOf(":");
     if (colon > 0) {
       let id = trimmed.slice(0, colon).trim();
       id = id.replace(/^[^a-zA-Z0-9_]+|[^a-zA-Z0-9_-]+$/g, "");
       let stateRaw = trimmed.slice(colon + 1).trim();
-      // Strip "STATE=" or other non-numeric prefixes the LLM sometimes adds
       stateRaw = stateRaw.replace(/^[^\d]+/, "");
       const state = Number(stateRaw);
       if (id && (state === 1 || state === 2)) {
@@ -54,7 +58,6 @@ function parseEntries(text: string): DetectedEntry[] {
         continue;
       }
     }
-    // Plain ID — default to state 2 (complete) for backward compat
     result.push({ id: trimmed, state: 2 });
   }
   return result;
@@ -75,39 +78,36 @@ export async function detectCompletedObjectives(
     .join("\n");
 
   const prompt =
-    `Review the conversation below. Only LEARNER messages count as evidence — ` +
-    `the PERSONA's responses just provide context.\n\n` +
-    `For each objective, assess BOTH quantity AND quality:\n` +
-    `STATE=1 — below threshold (low quality or insufficient quantity)\n` +
-    `STATE=2 — threshold met AND quality good\n` +
-    `Omit objectives with no evidence.\n\n` +
-    `When an objective involves counting, append per-item quality scores: ` +
-    `id: STATE | score1,score2,...\n` +
-    `Each score is 0-100 reflecting quality of that specific action.\n` +
-    `Example: ask-contextual-questions: 1 | 70,85\n` +
-    `(means 2 questions: first 70% quality, second 85% quality)\n\n` +
-    `Objectives:\n${objectiveList}\n\n` +
-    `Conversation:\n${transcript}\n\n` +
+    `You are grading a student interviewing a historical figure.\n` +
+    `Only the LEARNER's (student's) actual questions and statements count as evidence.` +
+    `Greetings, pleasantries, and accepting offered items do NOT count.\n\n` +
+    `For each objective, decide if the LEARNER asked substantive questions or made ` +
+    `specific, relevant statements that demonstrate progress.\n` +
+    `Return a JSON array: [{"id":"...","state":1|2,"scores":[per-item 0-100]}]\n` +
+    `state=1 means some progress but below threshold. state=2 means threshold met.\n` +
+    `Omit objectives where the learner has not demonstrated any real progress.\n\n` +
     `Example:\n` +
-    `ask-contextual-questions: 2\nexplore-conversion-experience: 1`;
+    `[{"id":"ask-contextual-questions","state":1,"scores":[70]}]\n\n` +
+    `Objectives:\n${objectiveList}\n\n` +
+    `Conversation:\n${transcript}`;
 
   try {
     const reply = await provider.chat(
       [
-        { role: "system", content: "You are an objective tracker. List which objectives have any evidence." },
+        { role: "system", content: "You return JSON arrays of objective assessments." },
         { role: "user", content: prompt },
       ],
-      { temperature: 0 },
+      { temperature: 0, jsonMode: true },
     );
     let entries = parseEntries(reply);
-    // Retry once on parse failure with slightly higher temperature
+    // Retry once on parse failure
     if (entries.length === 0) {
       const retry = await provider.chat(
         [
-          { role: "system", content: "You are an objective tracker." },
+          { role: "system", content: "You return JSON arrays of objective assessments." },
           { role: "user", content: prompt },
         ],
-        { temperature: 0.1 },
+        { temperature: 0.1, jsonMode: true },
       );
       entries = parseEntries(retry);
     }
