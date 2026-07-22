@@ -52,15 +52,28 @@
         Describe the setting and what the learner is trying to accomplish.
       </edu-scenario>
 
-      <edu-objective id="objective-one">State an observable action the learner must take.</edu-objective>
-      <edu-objective id="objective-two">Another observable action.</edu-objective>
+      <!--
+        OBJECTIVE WRITING GUIDE:
+        Be SPECIFIC and CONCRETE. Include:
+        - What specific topic/detail the learner must address
+        - What does NOT count (greetings, pleasantries, vague references)
+        - Quantity where applicable ("at least two questions about...")
+        
+        Good: "Ask at least two specific questions about her trade in Tyrian purple cloth."
+        Bad:  "Ask about historical context."
+        
+        The detection system uses full credit descriptions from the rubric
+        as comparative references. More detail = more accurate detection.
+      -->
+      <edu-objective id="objective-one">Ask about [PERSONA DETAIL] — ask at least N questions that reference [SPECIFIC TOPIC]. Generic greetings like "How are you?" do not count.</edu-objective>
+      <edu-objective id="objective-two">Ask about [ANOTHER SPECIFIC DETAIL]. Vague references without asking for personal experience are weak.</edu-objective>
 
       <edu-rubric>
         <criterion objective="objective-one" weight="3">
-          How full credit looks vs. partial vs. none.
+          Full credit (3): Learner asks N+ specific questions that reference [DETAIL]. Partial (1-2): One specific question, rest are vague. Zero: Greetings or off-topic chat.
         </criterion>
         <criterion objective="objective-two" weight="3">
-          How full credit looks vs. partial vs. none.
+          Full credit (3): Learner asks about [SPECIFIC ASPECT]. Partial (1-2): Learner touches on it but moves on too quickly. Zero: Learner doesn't address it at all.
         </criterion>
       </edu-rubric>
 
