@@ -111,6 +111,7 @@ export async function mount(host?: HTMLElement): Promise<void> {
   const provider = createProvider(baked);
   let history: ChatMessage[] = [];
   let completedObjectives = new Map() as ObjectiveStatusMap;
+  let debugMode = false;
   let resultSnapshot: ResultSnapshot | null = null;
   let turn = 0;
   let ended = false;
@@ -252,9 +253,22 @@ export async function mount(host?: HTMLElement): Promise<void> {
           return;
         }
 
+        // Debug: on / off — toggle auto-debug output
+        if (/^on$/i.test(query)) {
+          debugMode = true;
+          ui.addSystemNote("🔧 Debug mode ON — filter and detection results will be shown automatically");
+          return;
+        }
+        if (/^off$/i.test(query)) {
+          debugMode = false;
+          ui.addSystemNote("🔧 Debug mode OFF");
+          return;
+        }
+
         // Debug: anything else — show help
         const help = [
           "Debug commands:",
+          "  Debug: on / off — toggle auto-debug output",
           "  Debug: state — show current detection state",
           '  Debug: filter "text" — test code-level filter only',
           '  Debug: detect "text" — test filter + actual LLM detection',
@@ -292,8 +306,31 @@ export async function mount(host?: HTMLElement): Promise<void> {
       const isNonsense = trimmed.length < 30 && /(pirate|matey|ahoy|aye|arrr|water|wine|drink|thirsty|hungry)/i.test(trimmed);
       // Need at least 3 words AND enough length to be substantive AND not nonsense
       const isSubstantive = wordCount >= 3 && trimmed.length > 10 && !isPleasantry && !isNonsense;
+
+      // Auto-debug: show filter result (only in debug mode)
+      if (debugMode && !isSubstantive) {
+        const reasons: string[] = [];
+        if (wordCount < 3) reasons.push(`only ${wordCount} word(s)`);
+        if (trimmed.length <= 10) reasons.push("too short");
+        if (isPleasantry) reasons.push("pleasantry");
+        if (isNonsense) reasons.push("nonsense/joke");
+        ui.addSystemNote(`⚙ Filter: blocked (${reasons.join(", ")})`);
+      }
+
       if (turn > 0 && turn % checkEvery === 0 && isSubstantive) {
+        if (debugMode) ui.addSystemNote("⚙ Filter: passed → calling LLM detector...");
         const latest = await detectCompletedObjectives(provider, comp, history);
+        // Show what the LLM returned (only in debug mode)
+        if (debugMode) {
+          if (latest.size === 0) {
+            ui.addSystemNote("⚙ LLM detector: no objectives detected");
+          } else {
+            const details = Array.from(latest.entries()).map(([id, s]) =>
+              `${id}${s.count ? ` [${s.count}]` : ""}`
+            ).join(", ");
+            ui.addSystemNote(`⚙ LLM detected: ${details}`);
+          }
+        }
         // Merge: first detection → yellow, re-detected → green
         for (const [id] of latest) {
           const prev = completedObjectives.get(id);
