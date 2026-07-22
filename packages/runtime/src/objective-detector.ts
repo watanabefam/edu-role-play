@@ -1,11 +1,13 @@
 import type { ChatMessage, CompositionData, Provider } from "./types";
 import { ObjectiveState } from "./types";
 
-/**
- * Parse a comma/line-separated list of objective IDs.
- * Falls back to JSON array parsing.
- */
-function parseIdList(text: string): string[] {
+interface DetectedEntry {
+  id: string;
+  state: number;
+}
+
+/** Parse lines like "id: 2" or "id: 1", or just IDs. Falls back to JSON parsing. */
+function parseEntries(text: string): DetectedEntry[] {
   const cleaned = text.replace(/```(?:json)?\s*/gi, "").replace(/\s*```/g, "").trim();
 
   // Try JSON array first
@@ -21,11 +23,26 @@ function parseIdList(text: string): string[] {
     } catch { /* fall through */ }
   }
 
-  // Fallback: comma or newline separated list
-  return cleaned
-    .split(/[\n,]+/)
-    .map((s) => s.replace(/^[-*\d.\s<>]+/, "").trim())
-    .filter((s) => s.length > 0);
+  // Fallback: line-separated with optional ":state" suffix
+  const result: DetectedEntry[] = [];
+  for (const line of cleaned.split(/[\n,]+/)) {
+    let trimmed = line.replace(/^[-*\d.\s<>]+/, "").trim();
+    if (!trimmed) continue;
+    // Try "id: state" format
+    const colon = trimmed.lastIndexOf(":");
+    if (colon > 0) {
+      let id = trimmed.slice(0, colon).trim();
+      id = id.replace(/^[^a-zA-Z0-9_]+|[^a-zA-Z0-9_-]+$/g, "");
+      const state = Number(trimmed.slice(colon + 1).trim());
+      if (id && (state === 1 || state === 2)) {
+        result.push({ id, state });
+        continue;
+      }
+    }
+    // Plain ID — default to state 2 (complete) for backward compat
+    result.push({ id: trimmed, state: 2 });
+  }
+  return result;
 }
 
 export async function detectCompletedObjectives(
@@ -44,15 +61,16 @@ export async function detectCompletedObjectives(
 
   const prompt =
     `Review the conversation below. Only LEARNER messages count as evidence — ` +
-    `the PERSONA's responses just provide context. The learner must actively ` +
-    `ask, mention, or demonstrate progress — if a topic only came up because ` +
-    `the PERSONA brought it up unprompted, that does NOT count.\n\n` +
-    `Return the IDs of objectives where the LEARNER has made any active ` +
-    `progress — one per line, no numbers, bullets, or colons.\n\n` +
+    `the PERSONA's responses just provide context.\n\n` +
+    `For each objective, rate the learner's best contribution:\n` +
+    `STATE=1 — touched on it, but vague/barely/tangential/low quality\n` +
+    `STATE=2 — clearly met with specific, on-topic, quality contribution\n` +
+    `Omit objectives with no evidence at all.\n\n` +
+    `Output format: id: STATE (one per line)\n\n` +
     `Objectives:\n${objectiveList}\n\n` +
     `Conversation:\n${transcript}\n\n` +
-    `Return ONLY the IDs, one per line. Example:\n` +
-    `ask-contextual-questions\nexplore-conversion-experience`;
+    `Example:\n` +
+    `ask-contextual-questions: 2\nexplore-conversion-experience: 1`;
 
   try {
     const reply = await provider.chat(
@@ -62,15 +80,15 @@ export async function detectCompletedObjectives(
       ],
       { temperature: 0 },
     );
-    const ids = parseIdList(reply);
-    if (ids.length === 0) return new Map();
+    const entries = parseEntries(reply);
+    if (entries.length === 0) return new Map();
 
     const validIds = new Set(comp.objectives.map((o) => o.id));
 
     const result: ObjectiveStatusMap = new Map();
-    for (const id of ids) {
+    for (const { id, state } of entries) {
       if (!validIds.has(id)) continue;
-      result.set(id, { state: ObjectiveState.Complete, evidence: "detected" });
+      result.set(id, { state: state as ObjectiveState, evidence: "detected" });
     }
     return result;
   } catch {

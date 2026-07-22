@@ -200,15 +200,11 @@ export async function mount(host?: HTMLElement): Promise<void> {
 
       if (turn > 0 && turn % checkEvery === 0) {
         const latest = await detectCompletedObjectives(provider, comp, history);
-        // Merge: first detection → yellow, re-detected → green
-        for (const [id] of latest) {
+        // Merge: respect detection quality, never decrease state
+        for (const [id, status] of latest) {
           const prev = completedObjectives.get(id);
-          if (!prev) {
-            // First time seen → yellow (partial)
-            completedObjectives.set(id, { state: ObjectiveState.Partial });
-          } else if (prev.state === ObjectiveState.Partial) {
-            // Seen again → promote to green (complete)
-            completedObjectives.set(id, { state: ObjectiveState.Complete });
+          if (!prev || status.state > prev.state) {
+            completedObjectives.set(id, status);
           }
         }
         record("objective_check", { completed: Array.from(completedObjectives.keys()) });
