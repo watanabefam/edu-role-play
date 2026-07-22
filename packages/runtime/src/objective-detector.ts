@@ -46,9 +46,10 @@ export async function detectCompletedObjectives(
   comp: CompositionData,
   history: ChatMessage[],
 ): Promise<ObjectiveStatusMap> {
+  // Only send learner messages — persona responses can bias the detector
   const transcript = history
-    .filter((m) => m.role !== "system")
-    .map((m) => `${m.role === "user" ? "LEARNER" : "PERSONA"}: ${m.content}`)
+    .filter((m) => m.role === "user")
+    .map((m) => `LEARNER: ${m.content}`)
     .join("\n");
 
   // Build rubric reference map: objectiveId → full credit description
