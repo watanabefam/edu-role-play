@@ -307,29 +307,37 @@ export async function mount(host?: HTMLElement): Promise<void> {
       // Need at least 3 words AND enough length to be substantive AND not nonsense
       const isSubstantive = wordCount >= 3 && trimmed.length > 10 && !isPleasantry && !isNonsense;
 
-      // Auto-debug: show filter result (only in debug mode)
-      if (debugMode && !isSubstantive) {
+      // Auto-debug: comprehensive pipeline trace
+      if (debugMode) {
         const reasons: string[] = [];
-        if (wordCount < 3) reasons.push(`only ${wordCount} word(s)`);
-        if (trimmed.length <= 10) reasons.push("too short");
-        if (isPleasantry) reasons.push("pleasantry");
-        if (isNonsense) reasons.push("nonsense/joke");
-        ui.addSystemNote(`⚙ Filter: blocked (${reasons.join(", ")})`);
+        if (wordCount < 3) reasons.push(`words=${wordCount}`);
+        if (trimmed.length <= 10) reasons.push(`chars=${trimmed.length}≤10`);
+        if (isPleasantry) reasons.push("pleasantry=yes");
+        if (isNonsense) reasons.push("nonsense=yes");
+        const filterResult = isSubstantive ? "PASSED" : `BLOCKED (${reasons.join(", ")})`;
+        if (!isSubstantive) {
+          const contentPreview = trimmed.length > 40 ? trimmed.slice(0, 40) + "..." : trimmed;
+          ui.addSystemNote(`⚙ [turn ${turn}] Filter: "${contentPreview}" → ${filterResult}`);
+        }
       }
 
       if (turn > 0 && turn % checkEvery === 0 && isSubstantive) {
-        if (debugMode) ui.addSystemNote("⚙ Filter: passed → calling LLM detector...");
+        let trace = `⚙ [turn ${turn}] Filter: PASSED\n`;
+        trace += `  Input (${trimmed.length} chars, ${wordCount} words): "${trimmed.length > 60 ? trimmed.slice(0,60)+"..." : trimmed}"\n`;
+
+        if (debugMode) ui.addSystemNote(trace);
+        const before = new Map(completedObjectives);
         const latest = await detectCompletedObjectives(provider, comp, history);
-        // Show what the LLM returned (only in debug mode)
+
         if (debugMode) {
-          if (latest.size === 0) {
-            ui.addSystemNote("⚙ LLM detector: no objectives detected");
-          } else {
-            const details = Array.from(latest.entries()).map(([id, s]) =>
-              `${id}${s.count ? ` [${s.count}]` : ""}`
-            ).join(", ");
-            ui.addSystemNote(`⚙ LLM detected: ${details}`);
+          let detTrace = `  LLM returned: ${latest.size} objective(s)\n`;
+          for (const [id, s] of latest) {
+            const aiText = comp.objectives.find(o => o.id === id)?.detectText || comp.objectives.find(o => o.id === id)?.text || id;
+            const preview = aiText.length > 80 ? aiText.slice(0, 80) + "..." : aiText;
+            detTrace += `    ${id}: state=${s.state === 2 ? "COMPLETE" : "PARTIAL"}${s.count ? ` scores=[${s.count}]` : ""}\n`;
+            detTrace += `      AI objective: "${preview}"\n`;
           }
+          ui.addSystemNote(detTrace);
         }
         // Merge: first detection → yellow, re-detected → green
         for (const [id] of latest) {
@@ -342,6 +350,23 @@ export async function mount(host?: HTMLElement): Promise<void> {
         }
         record("objective_check", { completed: Array.from(completedObjectives.keys()) });
         ui.setObjectiveStatus(completedObjectives);
+
+        // Show merge result in debug mode
+        if (debugMode) {
+          const changes: string[] = [];
+          for (const [id, s] of completedObjectives) {
+            const b = before.get(id);
+            const bSt = b ? (b.state === 2 ? "GREEN" : b.state === 1 ? "YELLOW" : "GREY") : "NONE";
+            const aSt = s.state === 2 ? "GREEN" : s.state === 1 ? "YELLOW" : "GREY";
+            if (bSt !== aSt) changes.push(`${id}: ${bSt} → ${aSt}`);
+          }
+          if (changes.length > 0) {
+            ui.addSystemNote(`  Merge: ${changes.join(", ")}`);
+          } else {
+            ui.addSystemNote(`  Merge: no state changes`);
+          }
+        }
+
         const allMet = comp.objectives.every((o) => {
           const s = completedObjectives.get(o.id);
           return s && s.state === ObjectiveState.Complete;
