@@ -47,13 +47,18 @@ export async function detectCompletedObjectives(
     .join("\n");
 
   const prompt =
-    `Review the conversation below. For each objective, decide if the learner has made progress.\n` +
-    `Return the IDs of objectives where some progress was made — one per line, no numbers or bullets.\n` +
-    `If an objective requires multiple actions (e.g. "ask at least two questions"), include it\n` +
-    `even if only partially met — the scoring will determine partial credit.\n\n` +
+    `Review the conversation below. Only LEARNER messages count as evidence — ` +
+    `the PERSONA's responses just provide context. The learner must actively ` +
+    `ask, mention, or demonstrate progress — if a topic only came up because ` +
+    `the PERSONA brought it up unprompted, that does NOT count.\n\n` +
+    `Return the IDs of objectives where the LEARNER actively made progress — ` +
+    `one per line, no numbers or bullets.\n` +
+    `If an objective requires multiple actions (e.g. "ask at least two ` +
+    `questions"), include it even if only partially met.\n\n` +
     `Objectives:\n${objectiveList}\n\n` +
     `Conversation:\n${transcript}\n\n` +
-    `Return ONLY the objective IDs, one per line. Example:\n` +
+    `Return ONLY the objective IDs where the LEARNER actively made progress, ` +
+    `one per line. Example:\n` +
     `ask-contextual-questions\nexplore-conversion-experience`;
 
   try {
