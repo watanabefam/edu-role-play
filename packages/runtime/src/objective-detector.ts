@@ -7,16 +7,22 @@ interface DetectedEntry {
   count?: string;
 }
 
-/** Parse line-separated objective IDs. State always defaults to 2 (complete). */
+/** Parse lines with optional [evidence] suffix. State defaults to 2. */
 function parseEntries(text: string): DetectedEntry[] {
   const cleaned = text.replace(/```(?:json)?\s*/gi, "").replace(/\s*```/g, "").trim();
 
-  // Line-separated format: one ID per line or comma-separated
   const result: DetectedEntry[] = [];
   for (const line of cleaned.split(/[\n,]+/)) {
     let trimmed = line.replace(/^[-*\d.\s<>]+/, "").trim();
     if (!trimmed) continue;
-    // Try "id: state" with state override
+    // Extract evidence quote in [brackets] (store for quality monitoring)
+    let _evidence = "";
+    const bracketMatch = trimmed.match(/\[([\s\S]*?)\]/);
+    if (bracketMatch) {
+      _evidence = bracketMatch[1].trim();
+      trimmed = trimmed.replace(/\s*\[[\s\S]*?\]/, "").trim();
+    }
+    // Try "id: state" format (backward compat)
     const colon = trimmed.lastIndexOf(":");
     if (colon > 0) {
       let id = trimmed.slice(0, colon).trim();
@@ -29,7 +35,7 @@ function parseEntries(text: string): DetectedEntry[] {
         continue;
       }
     }
-    // Plain ID — state 2 (complete)
+    // Plain ID — state 2
     result.push({ id: trimmed, state: 2 });
   }
   return result;
@@ -54,23 +60,31 @@ export async function detectCompletedObjectives(
   const objectivesWithRef = comp.objectives
     .map((o) => {
       const ref = rubricMap.get(o.id);
-      return ref ? `- ${o.id}: ${o.text}\n  Full credit looks like: ${ref}` : `- ${o.id}: ${o.text}`;
+      // Extract partial/zero criteria as negative examples
+      const partialMatch = ref?.match(/[Pp]artial[\s\S]*?\./);
+      const zeroMatch = ref?.match(/[Zz]ero[\s\S]*?(?:\.|$)/);
+      const negLines: string[] = [];
+      if (partialMatch) negLines.push(`  Does NOT count (partial): ${partialMatch[0].replace(/^[Pp]artial/i, "").trim()}`);
+      if (zeroMatch) negLines.push(`  Does NOT count (zero): ${zeroMatch[0].replace(/^[Zz]ero/i, "").trim()}`);
+      const refLine = ref ? `  Full credit: ${ref}` : "";
+      return [`- ${o.id}: ${o.text}`, refLine, ...negLines].filter(Boolean).join("\n");
     })
-    .join("\n");
+    .join("\n\n");
 
   const prompt =
-    `Only the LEARNER's actual questions or statements count. Greetings, ` +
-    `pleasantries, and accepting offered items do NOT count.\n\n` +
+    `Only the LEARNER's actual questions or statements count. ` +
+    `Greetings, pleasantries, and accepting offered items do NOT count.\n\n` +
     `For each objective below, compare what the learner actually said against ` +
-    `the full credit description. List the objective ID if the learner has made ` +
-    `any real progress toward it — even if partial.\n` +
-    `Omit objectives where the learner has not demonstrated any real progress ` +
-    `toward the described standard.\n\n` +
-    `Objectives with full credit reference:\n${objectivesWithRef}\n\n` +
+    `both the full credit and the DOES NOT COUNT descriptions. ` +
+    `Output the objective ID followed by a brief evidence quote in brackets.\n` +
+    `List the ID only if there is real progress toward the full credit standard.\n` +
+    `If the learner'\''s contribution matches a "Does NOT count" description, ` +
+    `EXCLUDE that objective even if there is some superficial resemblance.\n\n` +
+    `Objectives:\n${objectivesWithRef}\n\n` +
     `Conversation:\n${transcript}\n\n` +
-    `Return ONLY the objective IDs where progress exists, one per line.\n` +
-    `Example:\n` +
-    `ask-contextual-questions\nexplore-conversion-experience`;
+    `Return ONLY the IDs with evidence, one per line:\n` +
+    `ask-contextual-questions [learner asked about Roman trade]\n` +
+    `explore-conversion-experience [learner asked about baptism]`;
 
   try {
     const reply = await provider.chat(
